@@ -1,0 +1,70 @@
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css");
+@import "tailwindcss";
+
+@font-face {
+  font-family: 'KccImKwonTaek';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2202@1.0/KCCImkwontaek.woff') format('woff');
+  font-weight: normal;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans: "Pretendard", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+@utility font-imkwontaek {
+  font-family: "KccImKwonTaek", cursive, sans-serif;
+}
+
+@layer base {
+  html, body {
+    background-color: #ffffff;
+    color: #0f172a;
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+    overflow-x: hidden;
+  }
+}
+
+.sky-bg {
+  background: linear-gradient(180deg, #ffffff 0%, #f0f9ff 35%, #e0f2fe 70%, #f8fafc 100%);
+}
+
+.cloud-blob { position:fixed;border-radius:50%;filter:blur(48px);pointer-events:none;z-index:0;animation:blobFloat 20s ease-in-out infinite alternate; }
+.cloud-blob-1 { width:500px;height:300px;background:radial-gradient(circle,rgba(56,189,248,.12) 0%,transparent 70%);top:5%;left:-5%;animation-duration:22s; }
+.cloud-blob-2 { width:600px;height:350px;background:radial-gradient(circle,rgba(14,165,233,.08) 0%,transparent 70%);top:40%;right:-8%;animation-duration:28s;animation-delay:-8s; }
+.cloud-blob-3 { width:400px;height:250px;background:radial-gradient(circle,rgba(56,189,248,.1) 0%,transparent 70%);top:75%;left:10%;animation-duration:18s;animation-delay:-4s; }
+@keyframes blobFloat { 0%{transform:translate(0,0) scale(1)} 100%{transform:translate(30px,-20px) scale(1.05)} }
+
+.card { background:rgba(255,255,255,.92);border:1px solid rgba(14,165,233,.15);border-radius:20px;box-shadow:0 8px 24px -8px rgba(14,165,233,.1),0 1px 3px rgba(0,0,0,.04),inset 0 1px 0 rgba(255,255,255,.8);transition:all .25s cubic-bezier(.175,.885,.32,1.275); }
+.card:hover { transform:translateY(-4px);box-shadow:0 20px 40px -12px rgba(14,165,233,.18);border-color:rgba(14,165,233,.45); }
+
+.btn-primary { background:#0ea5e9;color:#fff;font-weight:800;border-radius:9999px;box-shadow:0 6px 14px -4px rgba(14,165,233,.35);transition:all .2s;cursor:pointer; }
+.btn-primary:hover { background:#38bdf8;transform:translateY(-2px); }
+.btn-secondary { background:rgba(14,165,233,.07);color:#0284c7;font-weight:600;border:1px solid rgba(14,165,233,.22);border-radius:9999px;transition:all .2s;cursor:pointer; }
+.btn-secondary:hover { background:rgba(14,165,233,.15);border-color:#0ea5e9;transform:translateY(-1px); }
+
+.badge { display:inline-flex;align-items:center;gap:6px;padding:4px 12px;background:#f0f9ff;border:1px solid rgba(14,165,233,.2);border-radius:9999px;font-size:.7rem;font-weight:700;color:#0369a1;letter-spacing:.06em;text-transform:uppercase; }
+
+.skill-fill { height:100%;border-radius:9999px;background:linear-gradient(90deg,#38bdf8,#0284c7);transition:width .5s ease; }
+
+.reveal { opacity:0;transform:translateY(20px);transition:opacity .7s ease,transform .7s ease; }
+.reveal.visible { opacity:1;transform:translateY(0); }
+.d1{transition-delay:.1s}.d2{transition-delay:.2s}.d3{transition-delay:.3s}.d4{transition-delay:.4s}
+
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:#f1f5f9}
+::-webkit-scrollbar-thumb{background:#bae6fd;border-radius:8px}
+::-webkit-scrollbar-thumb:hover{background:#0ea5e9}
+
+.work-overlay { position:absolute;inset:0;background:rgba(0,0,0,0.45);opacity:0;transition:opacity .3s;display:flex;align-items:center;justify-content:center; }
+.work-card:hover .work-overlay { opacity:1; }
+
+/* 스킬 아이콘 행 */
+.skill-row { display:flex;align-items:center;gap:12px;padding:12px 16px;background:rgba(255,255,255,.8);border:1px solid rgba(14,165,233,.12);border-radius:12px;margin-bottom:8px; }
+.skill-row:last-child { margin-bottom:0; }
+
+/* 프로세스 스텝 */
+.process-step { border-left:3px solid #0ea5e9;padding-left:1.5rem;padding-bottom:2rem;position:relative; }
+.process-step:last-child { padding-bottom:0; }
+.process-step::before { content:'';position:absolute;left:-7px;top:0;width:11px;height:11px;border-radius:50%;background:#0ea5e9;border:2px solid white;box-shadow:0 0 0 2px #0ea5e9; }
