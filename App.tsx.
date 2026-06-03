@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import AdminPanel from "./components/AdminPanel";
-import AdminPanel from "./AdminPanel";
-<header className="fixed top-0 left-0 right-0 z-40
+import {
+  Menu, X, Sparkles, ArrowRight, Star, Play, Layers,
+  ThumbsUp, Settings, Calendar, CheckCircle2, Copy, Send,
   Folder, Cloud, Eye, Camera, User
 } from "lucide-react";
 import { PortfolioData, PortfolioWork, DesignSettings } from "./types";
