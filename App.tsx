@@ -30,6 +30,16 @@ sectionOrder: ["about","projects","process","portfolio","skills","career","conta
 globalFontSize: "base",
 };
 
+// ── Google Drive / 외부 이미지 URL 정규화 ──
+function normalizeImageUrl(url: string): string {
+  if (!url) return url;
+  const driveMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+  if (driveMatch) return `https://drive.google.com/thumbnail?id=${driveMatch[1]}&sz=w800`;
+  const driveMatch2 = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (url.includes("drive.google.com") && driveMatch2) return `https://drive.google.com/thumbnail?id=${driveMatch2[1]}&sz=w800`;
+  return url;
+}
+
 // ── 진짜 툴 SVG 아이콘 (Simple Icons CDN) ──
 const SKILL_ICON_URLS: Record<string, string> = {
   "Figma": "https://cdn.simpleicons.org/figma",
@@ -68,23 +78,67 @@ function SkillIcon({ name, size = 28 }: { name: string; size?: number }) {
 
 const renderText = (text: string, style?: { fontSize?: string; fontWeight?: string; lineBreak?: boolean }) => {
 const sizeMap: Record<string,string> = {
-sm:"text-sm",base:"text-base",lg:"text-lg",xl:"text-xl",
-"2xl":"text-2xl","3xl":"text-3xl","4xl":"text-4xl","5xl":"text-5xl"
+"xs":"text-xs","sm":"text-sm","base":"text-base","lg":"text-lg","xl":"text-xl",
+"2xl":"text-2xl","3xl":"text-3xl","4xl":"text-4xl","5xl":"text-5xl","6xl":"text-6xl"
 };
 const weightMap: Record<string,string> = {
-normal:"font-normal",medium:"font-medium",bold:"font-bold",black:"font-black"
+normal:"font-normal",medium:"font-medium",semibold:"font-semibold",bold:"font-bold",black:"font-black"
 };
 const cls = [
 style?.fontSize ? sizeMap[style.fontSize]||"" : "",
 style?.fontWeight ? weightMap[style.fontWeight]||"" : "",
 ].filter(Boolean).join(" ");
-if (style?.lineBreak) {
+// \n 또는 lineBreak 플래그 시 줄바꿈 렌더링
+const hasBreak = text.includes("\\n") || style?.lineBreak;
+if (hasBreak) {
 return <>{text.split("\\n").map((line, i, arr) => (
 <span key={i} className={cls}>{line}{i < arr.length-1 && <br />}</span>
 ))}</>;
 }
 return <span className={cls}>{text}</span>;
 };
+
+// ── Supabase 설정 (환경변수로 관리) ──
+const SUPABASE_URL = (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_SUPABASE_URL) || "";
+const SUPABASE_ANON_KEY = (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_SUPABASE_ANON_KEY) || "";
+const SUPABASE_TABLE = "portfolio_data";
+const SUPABASE_ROW_ID = 1;
+
+async function dbLoad(): Promise<PortfolioData | null> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=eq.${SUPABASE_ROW_ID}&select=data`,
+      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } }
+    );
+    const rows = await res.json();
+    return rows?.[0]?.data ?? null;
+  } catch { return null; }
+}
+
+async function dbSave(d: PortfolioData): Promise<void> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=eq.${SUPABASE_ROW_ID}`, {
+      method: "PATCH",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({ data: d }),
+    });
+  } catch {}
+}
+
+// ── 어드민 접근 허용 조건: localhost이거나 URL에 ?admin=true ──
+function isAdminAllowed(): boolean {
+  const host = window.location.hostname;
+  const isLocal = host === "localhost" || host === "127.0.0.1" || host.startsWith("192.168.");
+  const hasParam = new URLSearchParams(window.location.search).get("admin") === "true";
+  return isLocal || hasParam;
+}
 
 export default function App() {
 const [data, setData] = useState<PortfolioData>(() => initialPortfolioData);
@@ -96,6 +150,8 @@ const [selectedWork, setSelectedWork] = useState<PortfolioWork | null>(null);
 const [selectedCat, setSelectedCat] = useState("all");
 const [activeSection, setActiveSection] = useState("about");
 const [adminLoggedIn, setAdminLoggedIn] = useState(false);
+const [loading, setLoading] = useState(true);
+const adminAllowed = isAdminAllowed();
 
 useEffect(() => {
 const logged = sessionStorage.getItem("ysk_admin_auth");
@@ -122,22 +178,44 @@ portfolio: portRef, skills: skillRef, career: careerRef, contact: contactRef,
 useReveal(aboutRef); useReveal(projRef); useReveal(procRef);
 useReveal(portRef); useReveal(skillRef); useReveal(careerRef); useReveal(contactRef);
 
+// ── 데이터 로드: Supabase 우선, 없으면 localStorage 폴백 ──
 useEffect(() => {
-try {
-const saved = localStorage.getItem("ysk_final_v2");
-if (saved) {
-const p = JSON.parse(saved);
-if (!p.sections) p.sections = initialPortfolioData.sections;
-else p.sections = { ...initialPortfolioData.sections, ...p.sections };
-if (!p.design) p.design = initialPortfolioData.design;
-setData(p);
-}
-} catch {}
+  (async () => {
+    setLoading(true);
+    try {
+      // 1) Supabase에서 로드 시도
+      const remote = await dbLoad();
+      if (remote) {
+        if (!remote.sections) remote.sections = initialPortfolioData.sections;
+        else remote.sections = { ...initialPortfolioData.sections, ...remote.sections };
+        if (!remote.design) remote.design = initialPortfolioData.design;
+        setData(remote);
+        // 로컬에도 캐시 (오프라인 대비)
+        localStorage.setItem("ysk_final_v2", JSON.stringify(remote));
+        setLoading(false);
+        return;
+      }
+    } catch {}
+    // 2) Supabase 실패 시 localStorage 폴백
+    try {
+      const saved = localStorage.getItem("ysk_final_v2");
+      if (saved) {
+        const p = JSON.parse(saved);
+        if (!p.sections) p.sections = initialPortfolioData.sections;
+        else p.sections = { ...initialPortfolioData.sections, ...p.sections };
+        if (!p.design) p.design = initialPortfolioData.design;
+        setData(p);
+      }
+    } catch {}
+    setLoading(false);
+  })();
 }, []);
 
+// ── 데이터 저장: Supabase + localStorage 동시 저장 ──
 const saveData = (d: PortfolioData) => {
-setData(d);
-localStorage.setItem("ysk_final_v2", JSON.stringify(d));
+  setData(d);
+  localStorage.setItem("ysk_final_v2", JSON.stringify(d));
+  dbSave(d); // 모든 기기에 동기화
 };
 
 useEffect(() => {
@@ -146,20 +224,21 @@ window.addEventListener("scroll", fn);
 return () => window.removeEventListener("scroll", fn);
 }, []);
 
+// 스크롤 위치로 현재 섹션 실시간 감지
 useEffect(() => {
-const obs = new IntersectionObserver(
-entries => {
-entries.forEach(e => {
-if (e.isIntersecting) {
-const found = Object.entries(sectionRefMap).find(([, ref]) => ref.current === e.target);
-if (found) setActiveSection(found[0]);
-}
-});
-},
-{ threshold: 0.3 }
-);
-Object.values(sectionRefMap).forEach(ref => { if (ref.current) obs.observe(ref.current); });
-return () => obs.disconnect();
+  const handleScroll = () => {
+    const scrollY = window.scrollY + window.innerHeight * 0.25;
+    let current = "about";
+    for (const [id, ref] of Object.entries(sectionRefMap)) {
+      const el = ref.current;
+      if (!el) continue;
+      if (scrollY >= el.offsetTop) current = id;
+    }
+    setActiveSection(current);
+  };
+  window.addEventListener("scroll", handleScroll, { passive: true });
+  handleScroll();
+  return () => window.removeEventListener("scroll", handleScroll);
 }, []);
 
 useEffect(() => {
@@ -185,6 +264,12 @@ try { const v = new URL(url).searchParams.get("v"); if (v) return `https://www.y
 if (url.includes("youtu.be/")) {
 try { const id = url.split("youtu.be/")[1]?.split("?")[0]; if (id) return `https://www.youtube.com/embed/${id}?autoplay=1`; } catch {}
 }
+// Google Drive 영상
+const driveMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+if (driveMatch) return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
+if (url.includes("vimeo.com")) {
+try { const id = url.split("vimeo.com/")[1]?.split("?")[0]; if (id) return `https://player.vimeo.com/video/${id}?autoplay=1`; } catch {}
+}
 return "";
 };
 
@@ -205,15 +290,34 @@ return sec ? (sec.visible !== false) : true;
 };
 
 const renderHeadline = (text: string) => {
-const parts = text.split(/(유수경|유수\(流水\))/g);
-return parts.map((part, i) =>
+// \n 줄바꿈 처리
+const lines = text.split("\\n");
+return lines.map((line, li) => {
+const parts = line.split(/(유수경|유수\(流水\))/g);
+return (
+<span key={li}>
+{parts.map((part, i) =>
 (part === "유수경" || part === "유수(流水)")
 ? <span key={i} className="font-imkwontaek" style={{ color: primary }}>{part}</span>
 : <span key={i}>{part}</span>
+)}
+{li < lines.length - 1 && <br />}
+</span>
 );
+});
 };
 
 const globalFontClass = D.globalFontSize === "sm" ? "text-sm" : D.globalFontSize === "lg" ? "text-lg" : "text-base";
+
+// 로딩 중 스피너
+if (loading) return (
+<div className="min-h-screen flex items-center justify-center" style={{ background: D.bgColor }}>
+<div className="flex flex-col items-center gap-4">
+<div className="w-10 h-10 rounded-full border-4 border-t-transparent animate-spin" style={{ borderColor: primary + "30", borderTopColor: primary }} />
+<p className="text-xs font-bold" style={{ color: primary }}>Loading...</p>
+</div>
+</div>
+);
 
 return (
 <div className={`min-h-screen relative pb-12 overflow-x-hidden ${globalFontClass}`}
@@ -244,6 +348,7 @@ borderBottom: scrolled ? `1px solid ${primary}15` : "none",
 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
 <a href="#about" className="flex items-center gap-2.5 group"
 onClick={(e) => {
+if (!adminAllowed) return;
 const now = Date.now();
 const key = "_adminClicks";
 const stored = JSON.parse(sessionStorage.getItem(key) || "[]");
@@ -281,11 +386,13 @@ onMouseLeave={e => { if (!isActive) { (e.currentTarget as HTMLElement).style.bac
 </nav>
 
 <div className="flex items-center gap-2">
+{adminAllowed && (
 <button onClick={() => setAdminOpen(true)}
 className="py-1.5 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border"
 style={{ background: primary + "15", borderColor: primary + "40", color: primary }}>
 <Settings className="w-3.5 h-3.5" /> 수정 [admin]
 </button>
+)}
 <a href="#contact" className="hidden md:inline-flex items-center py-1.5 px-4 rounded-lg text-xs font-black"
 style={{ background: D.btnPrimaryColor, color: D.btnPrimaryText }}>
 문의하기
@@ -300,15 +407,28 @@ style={{ background: D.btnPrimaryColor, color: D.btnPrimaryText }}>
 {mobileOpen && (
 <motion.div initial={{ opacity:0,height:0 }} animate={{ opacity:1,height:"auto" }} exit={{ opacity:0,height:0 }}
 className="lg:hidden border-b p-4 shadow-lg" style={{ background: D.navBgColor, borderColor: primary + "20" }}>
-<nav className="flex flex-col gap-2 text-sm font-bold">
-{navItems.map(([href,,label]) => (
+<nav className="flex flex-col gap-1">
+{navItems.map(([href, id, label]) => {
+const isAct = activeSection === id;
+return (
 <a key={href} href={href} onClick={() => setMobileOpen(false)}
-className="p-2 rounded" style={{ color: D.textColor }}>{label}</a>
-))}
+className="p-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all"
+style={{ background: isAct ? primary+"18" : "transparent", color: isAct ? primary : D.textColor + "99" }}>
+{isAct && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: primary }} />}
+{label}
+</a>
+);
+})}
 </nav>
 </motion.div>
 )}
 </AnimatePresence>
+{/* 스크롤 진행 표시바 */}
+<div className="h-0.5 w-full" style={{ background: primary + "15" }}>
+<motion.div className="h-full" style={{ background: primary }}
+animate={{ width: `${(navItems.findIndex(([,id]) => id === activeSection) + 1) / navItems.length * 100}%` }}
+transition={{ duration: 0.3, ease: "easeOut" }} />
+</div>
 </header>
 
 {/* ══ 섹션 렌더링 ══ */}
@@ -334,7 +454,11 @@ className="pt-14 pb-20 lg:pt-20 lg:pb-28 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 
 <p className="text-sm font-bold mt-2" style={{ color: D.textColor + "88" }}>{data.profile.title}</p>
 </div>
 <div className="p-5 rounded-2xl border" style={{ background: D.cardBgColor, borderColor: primary + "20" }}>
-<p className="text-sm font-light leading-relaxed" style={{ color: D.textColor + "cc" }}>{data.profile.subHeadline}</p>
+<p className="text-sm font-light leading-relaxed" style={{ color: D.textColor + "cc" }}>
+{data.profile.subHeadline?.split("\\n").map((line, i, arr) => (
+<span key={i}>{line}{i < arr.length-1 && <br />}</span>
+))}
+</p>
 </div>
 </div>
 
@@ -485,7 +609,7 @@ style={{ background: primary + "08", borderColor: primary + "15" }}>
 <p className="text-sm max-w-2xl font-light mt-2 leading-relaxed" style={{ color: D.textColor + "88" }}>{renderText(sec?.subtitle||"", sec?.subtitleStyle)}</p>
 </div>
 <button onClick={() => setAdminOpen(true)} className="shrink-0 text-xs font-bold border px-3 py-2 rounded-xl cursor-pointer transition-colors"
-style={{ color: primary, borderColor: primary+"30", background: primary+"10" }}>
+style={{ color: primary, borderColor: primary+"30", background: primary+"10", display: adminAllowed ? "block" : "none" }}>
 📂 이미지 추가/편집
 </button>
 </div>
@@ -516,7 +640,7 @@ style={{ borderColor: primary + "15", background: D.cardBgColor }}
 onClick={() => setSelectedWork(work)}>
 <div className="grid grid-cols-12 items-center">
 <div className="col-span-3 sm:col-span-2 aspect-square sm:aspect-video overflow-hidden relative" style={{ background: primary + "10" }}>
-<img src={work.imageUrl} alt={work.title} referrerPolicy="no-referrer" className="w-full h-full object-cover transition-transform duration-500 hover:scale-[1.05]" />
+<img src={normalizeImageUrl(work.imageUrl)} alt={work.title} referrerPolicy="no-referrer" className="w-full h-full object-cover transition-transform duration-500 hover:scale-[1.05]" />
 {work.workType === "video" && (
 <div className="absolute inset-0 flex items-center justify-center bg-black/30">
 <Play className="w-5 h-5 text-white fill-current" />
@@ -559,7 +683,7 @@ return em
 : <video src={selectedWork.videoUrl} controls autoPlay className="w-full max-h-[70vh]" />; })()
 ) : null
 ) : (
-<img src={selectedWork.imageUrl} alt={selectedWork.title} className="w-full h-full object-contain max-h-[70vh]" referrerPolicy="no-referrer" />
+<img src={normalizeImageUrl(selectedWork.imageUrl)} alt={selectedWork.title} className="w-full h-full object-contain max-h-[70vh]" referrerPolicy="no-referrer" />
 )}
 </div>
 <div className="md:col-span-4 p-6 flex flex-col justify-between min-h-[300px]">
@@ -724,7 +848,7 @@ return null;
 </footer>
 
 <AnimatePresence>
-{adminOpen && (
+{adminAllowed && adminOpen && (
 <AdminPanel
 data={data}
 onSave={saveData}
