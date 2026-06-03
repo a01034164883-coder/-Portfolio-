@@ -1,12 +1,14 @@
 import { useState, FormEvent } from "react";
 import {
-  Lock, Save, RotateCcw, X, Plus, Trash2, Upload, Star, Settings,
-  Type, Palette, Eye, EyeOff, GripVertical, Film, Inbox, Wand2, FolderOpen
+  Lock, Save, RotateCcw, X, Plus, Trash2, Star, Settings,
+  Type, Palette, Eye, EyeOff, GripVertical, Film, Link2,
+  Wand2, Upload, CheckCircle2, Monitor, Smartphone
 } from "lucide-react";
 import { motion } from "motion/react";
 import { PortfolioData, SectionHeaders, DesignSettings } from "../types";
 import { initialPortfolioData } from "../data";
 
+// ── 이미지 압축 ──
 const compress = (file: File, mW: number, mH: number, cb: (b: string) => void) => {
   const r = new FileReader();
   r.onload = e => {
@@ -26,6 +28,33 @@ const compress = (file: File, mW: number, mH: number, cb: (b: string) => void) =
   r.readAsDataURL(file);
 };
 
+// ── Google Drive URL 정규화 ──
+function normalizeImageUrl(url: string): string {
+  if (!url) return url;
+  const driveMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+  if (driveMatch) return `https://drive.google.com/thumbnail?id=${driveMatch[1]}&sz=w800`;
+  const driveMatch2 = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (url.includes("drive.google.com") && driveMatch2) return `https://drive.google.com/thumbnail?id=${driveMatch2[1]}&sz=w800`;
+  return url;
+}
+
+// ── URL 플랫폼 감지 ──
+function detectPlatform(url: string): string {
+  if (!url) return "";
+  if (url.includes("youtube.com") || url.includes("youtu.be")) return "YouTube";
+  if (url.includes("drive.google.com")) return "Google Drive";
+  if (url.includes("cloudinary.com")) return "Cloudinary";
+  if (url.includes("instagram.com")) return "Instagram";
+  if (url.includes("vimeo.com")) return "Vimeo";
+  if (url.match(/\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i)) return "이미지 URL";
+  if (url.match(/\.(mp4|mov|webm|avi)(\?|$)/i)) return "영상 URL";
+  return "외부 링크";
+}
+
+// ── 줄바꿈 텍스트 → \n 이스케이프 변환 ──
+const toStored = (v: string) => v.replace(/\n/g, "\\n");
+const fromStored = (v: string) => (v || "").replace(/\\n/g, "\n");
+
 const DEFAULT_DESIGN: DesignSettings = {
   primaryColor: "#0ea5e9", bgColor: "#ffffff", textColor: "#0f172a",
   cardBgColor: "#ffffff", navBgColor: "#ffffff",
@@ -41,288 +70,298 @@ const SECTION_LABELS: Record<string, string> = {
   portfolio: "04 갤러리", skills: "05 역량/툴", career: "06 경력", contact: "07 연락"
 };
 
+const KNOWN_CATEGORIES = ["에고랩스", "스튜디오 피엘", "청년철거", "모빌리티커넥트", "채인컴퍼니"];
+
+const URL_GUIDE = [
+  { icon: "🖼️", name: "Google Drive 이미지", hint: "파일 → '링크 복사' → 붙여넣기", example: "https://drive.google.com/file/d/ABC123/view" },
+  { icon: "▶️", name: "YouTube 영상", hint: "공유 → 링크 복사", example: "https://youtu.be/xxxxxxxxxxx" },
+  { icon: "☁️", name: "Cloudinary", hint: "Media Library → URL 복사", example: "https://res.cloudinary.com/.../image.jpg" },
+  { icon: "🌐", name: "직접 URL", hint: ".jpg .png .webp 등 직접 링크", example: "https://example.com/image.jpg" },
+];
+
 interface Props { data: PortfolioData; onSave: (d: PortfolioData) => void; onClose: () => void; onLogin?: () => void; }
 type Tab = "design"|"sections"|"profile"|"stats"|"strengths"|"projects"|"process"|"skills"|"career"|"whyme"|"contact"|"portfolio"|"bulk"|"tools";
 
-
-// ══ 일괄 업로드 컴포넌트 ══
-interface BulkItem {
-  id: string;
-  file: File;
-  preview: string;
-  title: string;
-  category: string;
-  workType: "image" | "video";
-  videoUrl?: string;
-  status: "pending" | "done" | "error";
-}
-
-const KNOWN_CATEGORIES = ["에고랩스", "스튜디오 피엘", "청년철거", "모빌리티커넥트", "채인컴퍼니"];
-
-function guessCategory(filename: string): string {
-  const f = filename.toLowerCase();
-  if (f.includes("에고") || f.includes("ego") || f.includes("밸런스") || f.includes("스터디") || f.includes("메모리")) return "에고랩스";
-  if (f.includes("피엘") || f.includes("pl") || f.includes("스튜디오")) return "스튜디오 피엘";
-  if (f.includes("철거") || f.includes("청년")) return "청년철거";
-  // 화물/용달 → 모빌리티커넥트
-  if (f.includes("모빌") || f.includes("화물") || f.includes("용달")) return "모빌리티커넥트";
-  // 파이(φ/π) 포장용기, 채인 → 채인컴퍼니
-  if (f.includes("채인") || f.includes("chain") || f.includes("파이") || f.includes("포장") || f.includes("용기") || /\d+파이/.test(filename)) return "채인컴퍼니";
-  return "에고랩스";
-}
-
-function guessTitle(filename: string): string {
-  // 확장자 제거, 날짜 패턴 제거, 밑줄/하이픈을 공백으로
-  let name = filename.replace(/\.[^.]+$/, "");
-  name = name.replace(/^\d{6}[-_]?/, ""); // 날짜 prefix 제거
-  name = name.replace(/[-_]/g, " ").trim();
-  name = name.replace(/\s+/g, " ");
-  return name || filename;
-}
-
-function BulkUploadTab({ draft, setDraft, compress }: {
-  draft: PortfolioData;
-  setDraft: (d: PortfolioData) => void;
-  compress: (f: File, mW: number, mH: number, cb: (b: string) => void) => void;
+// ══ 텍스트 스타일 컨트롤 ══
+function TextStyleControls({ label, value, onChange }: {
+  label: string;
+  value?: { fontSize?: string; fontWeight?: string; lineBreak?: boolean };
+  onChange: (v: any) => void;
 }) {
-  const [items, setItems] = useState<BulkItem[]>([]);
-  const [globalCat, setGlobalCat] = useState("");
-  const [processing, setProcessing] = useState(false);
+  const v = value || {};
+  const inp = "w-full p-1.5 bg-white border border-slate-200 rounded text-xs focus:border-sky-400 focus:outline-none cursor-pointer";
+  return (
+    <div className="bg-sky-50 border border-sky-100 rounded-xl p-3 space-y-2 mt-1">
+      <p className="text-[9px] text-sky-600 font-black uppercase tracking-wider">{label} 스타일</p>
+      <div className="grid grid-cols-3 gap-2">
+        <div>
+          <label className="block text-[9px] text-slate-400 mb-0.5 font-bold uppercase">크기</label>
+          <select className={inp} value={v.fontSize||""} onChange={e=>onChange({...v,fontSize:e.target.value||undefined})}>
+            <option value="">기본</option>
+            <option value="xs">극소(xs)</option>
+            <option value="sm">소(sm)</option>
+            <option value="base">중(base)</option>
+            <option value="lg">대(lg)</option>
+            <option value="xl">특대(xl)</option>
+            <option value="2xl">2xl</option>
+            <option value="3xl">3xl</option>
+            <option value="4xl">4xl</option>
+            <option value="5xl">5xl</option>
+            <option value="6xl">6xl</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-[9px] text-slate-400 mb-0.5 font-bold uppercase">굵기</label>
+          <select className={inp} value={v.fontWeight||""} onChange={e=>onChange({...v,fontWeight:e.target.value||undefined})}>
+            <option value="">기본</option>
+            <option value="normal">얇게</option>
+            <option value="medium">보통</option>
+            <option value="semibold">약간굵게</option>
+            <option value="bold">굵게</option>
+            <option value="black">매우굵게</option>
+          </select>
+        </div>
+        <div className="flex flex-col justify-end pb-1">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={!!v.lineBreak} onChange={e=>onChange({...v,lineBreak:e.target.checked})} className="w-3.5 h-3.5 accent-sky-500" />
+            <span className="text-[10px] text-slate-600 font-bold">줄바꿈</span>
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══ 일괄 URL 입력 탭 ══
+function BulkUrlTab({ draft, setDraft }: { draft: PortfolioData; setDraft: (d: PortfolioData) => void; }) {
+  const [rows, setRows] = useState<{ id: string; url: string; thumbUrl: string; title: string; category: string; workType: "image"|"video"; desc: string; }[]>([
+    { id: `r-${Date.now()}`, url: "", thumbUrl: "", title: "", category: KNOWN_CATEGORIES[0], workType: "image", desc: "" }
+  ]);
   const [done, setDone] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
+  const [globalCat, setGlobalCat] = useState("");
 
-  const handleFiles = (files: FileList | null) => {
-    if (!files) return;
-    const newItems: BulkItem[] = [];
-    Array.from(files).forEach(file => {
-      const isVideo = file.type.startsWith("video/");
-      const item: BulkItem = {
-        id: `bulk-${Date.now()}-${Math.random()}`,
-        file,
-        preview: "",
-        title: guessTitle(file.name),
-        category: guessCategory(file.name),
-        workType: isVideo ? "video" : "image",
-        status: "pending",
-      };
-      newItems.push(item);
+  const addRow = () => setRows(prev => [...prev, { id: `r-${Date.now()}-${Math.random()}`, url: "", thumbUrl: "", title: "", category: KNOWN_CATEGORIES[0], workType: "image", desc: "" }]);
+  const removeRow = (id: string) => setRows(prev => prev.filter(r => r.id !== id));
+  const updateRow = (id: string, changes: Partial<typeof rows[0]>) => setRows(prev => prev.map(r => r.id === id ? { ...r, ...changes } : r));
 
-      if (!isVideo) {
-        const reader = new FileReader();
-        reader.onload = e => {
-          setItems(prev => prev.map(i => i.id === item.id ? { ...i, preview: e.target?.result as string } : i));
-        };
-        reader.readAsDataURL(file);
-      }
-    });
-    setItems(prev => [...prev, ...newItems]);
-    setDone(false);
+  const handleUrlChange = (id: string, url: string) => {
+    const isVideo = url.includes("youtube.com") || url.includes("youtu.be") || url.includes("vimeo.com") || !!url.match(/\.(mp4|mov|webm)(\?|$)/i);
+    updateRow(id, { url, workType: isVideo ? "video" : "image" });
   };
 
-  const updateItem = (id: string, changes: Partial<BulkItem>) => {
-    setItems(prev => prev.map(i => i.id === id ? { ...i, ...changes } : i));
-  };
-
-  const removeItem = (id: string) => setItems(prev => prev.filter(i => i.id !== id));
-
-  const applyGlobalCat = () => {
-    if (!globalCat) return;
-    setItems(prev => prev.map(i => ({ ...i, category: globalCat })));
-  };
-
-  const processAndAdd = async () => {
-    setProcessing(true);
-    const newWorks: PortfolioWork[] = [];
-
-    for (const item of items) {
-      try {
-        let imageUrl = item.preview;
-        let videoBase64: string | undefined;
-
-        if (item.workType === "video") {
-          await new Promise<void>(resolve => {
-            const reader = new FileReader();
-            reader.onload = e => {
-              if (item.file.size <= 50 * 1024 * 1024) {
-                videoBase64 = e.target?.result as string;
-              }
-              resolve();
-            };
-            reader.readAsDataURL(item.file);
-          });
-          // 동영상 썸네일은 비워둠 (나중에 추가 가능)
-          imageUrl = imageUrl || "";
-        } else if (!imageUrl) {
-          await new Promise<void>(resolve => {
-            compress(item.file, 1000, 1000, b => { imageUrl = b; resolve(); });
-          });
-        }
-
-        newWorks.push({
-          id: item.id,
-          title: item.title,
-          category: item.category,
-          description: `${item.category} 포트폴리오 — ${item.title}`,
-          imageUrl,
-          workType: item.workType,
-          videoBase64,
-        } as any);
-
-        setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: "done" } : i));
-      } catch {
-        setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: "error" } : i));
-      }
+  const handlePasteMultiple = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const text = e.clipboardData.getData("text");
+    const urls = text.split(/\n/).map(l => l.trim()).filter(Boolean);
+    if (urls.length > 1) {
+      e.preventDefault();
+      const newRows = urls.map(url => ({
+        id: `r-${Date.now()}-${Math.random()}`,
+        url, thumbUrl: "",
+        title: url.split("/").pop()?.replace(/[?#].*$/, "").replace(/\.[^.]+$/, "") || "작품",
+        category: KNOWN_CATEGORIES[0],
+        workType: (url.includes("youtube.com") || url.includes("youtu.be") || !!url.match(/\.(mp4|mov)$/i)) ? "video" as const : "image" as const,
+        desc: "",
+      }));
+      setRows(prev => [...prev.filter(r => r.url), ...newRows]);
     }
+  };
 
-    setDraft({
-      ...draft,
-      portfolioWorks: [...(draft.portfolioWorks || []), ...newWorks],
-    });
-    setProcessing(false);
+  const applyGlobalCat = () => { if (globalCat) setRows(prev => prev.map(r => ({ ...r, category: globalCat }))); };
+
+  const addAll = () => {
+    const valid = rows.filter(r => r.url.trim());
+    if (!valid.length) return;
+    const newWorks = valid.map(r => ({
+      id: r.id,
+      title: r.title || "작품",
+      category: r.category,
+      description: r.desc || `${r.category} 포트폴리오`,
+      imageUrl: r.workType === "image" ? normalizeImageUrl(r.url) : normalizeImageUrl(r.thumbUrl),
+      workType: r.workType,
+      videoUrl: r.workType === "video" ? r.url : undefined,
+    }));
+    setDraft({ ...draft, portfolioWorks: [...(draft.portfolioWorks || []), ...newWorks] });
     setDone(true);
   };
 
   const inp = "w-full p-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:border-sky-400 focus:outline-none";
+  const lbl = "block text-[9px] text-slate-400 mb-0.5 uppercase tracking-wider font-bold";
 
   return (
-    <div className="space-y-5 max-w-3xl">
+    <div className="space-y-5 max-w-4xl">
       <div className="flex items-center gap-2 border-b border-sky-100 pb-2">
-        <Inbox className="w-4 h-4 text-sky-500" />
-        <h3 className="text-sky-600 font-black text-sm">일괄 업로드 & 자동 정리</h3>
+        <Link2 className="w-4 h-4 text-sky-500" />
+        <h3 className="text-sky-600 font-black text-sm">URL 링크로 일괄 추가</h3>
       </div>
-
-      <div className="bg-sky-50 border border-sky-100 rounded-2xl p-4 text-xs text-slate-600 space-y-1">
-        <p className="font-bold text-sky-700">💡 자동 분류 기준</p>
-        <p>· 파일명에 <strong>에고/ego/밸런스/스터디/메모리</strong> → 에고랩스</p>
-        <p>· 파일명에 <strong>피엘/pl/스튜디오</strong> → 스튜디오 피엘</p>
-        <p>· 파일명에 <strong>철거/청년</strong> → 청년철거</p>
-        <p>· 파일명에 <strong>모빌</strong> → 모빌리티커넥트</p>
-        <p>· 제목은 파일명 기반으로 자동 생성, 수정 가능</p>
-      </div>
-
-      {/* 드래그앤드롭 업로드 존 */}
-      <div
-        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={e => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
-        className="border-2 border-dashed rounded-2xl p-8 text-center transition-all cursor-pointer"
-        style={{ borderColor: dragOver ? "#0ea5e9" : "#bae6fd", background: dragOver ? "#f0f9ff" : "#f8fafc" }}
-        onClick={() => document.getElementById("bulk-input")?.click()}
-      >
-        <FolderOpen className="w-10 h-10 mx-auto mb-3 text-sky-300" />
-        <p className="font-black text-slate-700 text-sm">클릭하거나 파일을 여기에 드래그하세요</p>
-        <p className="text-xs text-slate-400 mt-1">이미지(jpg, png, gif) + 동영상(mp4, mov) 한번에 가능</p>
-        <p className="text-xs text-slate-400">여러 파일 동시 선택 가능</p>
-        <input id="bulk-input" type="file" multiple accept="image/*,video/*" className="hidden"
-          onChange={e => handleFiles(e.target.files)} />
-      </div>
-
-      {items.length > 0 && (
-        <>
-          {/* 전체 카테고리 일괄 변경 */}
-          <div className="flex gap-2 items-center bg-slate-50 border border-sky-100 rounded-xl p-3">
-            <Wand2 className="w-4 h-4 text-sky-500 shrink-0" />
-            <span className="text-xs font-bold text-slate-700 shrink-0">전체 카테고리 일괄 변경:</span>
-            <select className={inp + " flex-1"} value={globalCat} onChange={e => setGlobalCat(e.target.value)}>
-              <option value="">선택...</option>
-              {KNOWN_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <button onClick={applyGlobalCat}
-              className="shrink-0 px-3 py-1.5 bg-sky-500 text-white text-xs font-black rounded-lg hover:bg-sky-600">
-              적용
-            </button>
+      <div className="grid grid-cols-2 gap-3">
+        {URL_GUIDE.map(g => (
+          <div key={g.name} className="bg-sky-50 border border-sky-100 rounded-xl p-3 space-y-1">
+            <p className="text-xs font-black text-slate-700">{g.icon} {g.name}</p>
+            <p className="text-[10px] text-slate-500">{g.hint}</p>
+            <p className="text-[9px] text-slate-400 font-mono truncate">{g.example}</p>
           </div>
-
-          {/* 파일 목록 */}
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold text-slate-600">총 {items.length}개 파일</span>
-              <button onClick={() => setItems([])} className="text-xs text-red-400 hover:text-red-600">전체 삭제</button>
-            </div>
-
-            {items.map((item, i) => (
-              <div key={item.id} className={`bg-white border rounded-xl p-3 flex gap-3 items-start ${
-                item.status === "done" ? "border-emerald-200 bg-emerald-50" :
-                item.status === "error" ? "border-red-200 bg-red-50" : "border-sky-100"
-              }`}>
-                {/* 미리보기 */}
-                <div className="w-16 h-16 rounded-lg overflow-hidden bg-slate-100 shrink-0 flex items-center justify-center">
-                  {item.workType === "video" ? (
-                    <Film className="w-8 h-8 text-slate-400" />
-                  ) : item.preview ? (
-                    <img src={item.preview} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-8 h-8 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
-                  )}
-                </div>
-
-                {/* 편집 필드 */}
-                <div className="flex-1 space-y-1.5 min-w-0">
-                  <div className="flex gap-2">
-                    <div className="flex-1">
-                      <input className={inp} value={item.title} placeholder="제목"
-                        onChange={e => updateItem(item.id, { title: e.target.value })} />
-                    </div>
-                    <select className={inp + " w-36 shrink-0"} value={item.category}
-                      onChange={e => updateItem(item.id, { category: e.target.value })}>
-                      {KNOWN_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                      <option value="기타">기타</option>
-                    </select>
-                  </div>
-                  <div className="flex gap-2 items-center">
-                    <span className={`text-[9px] px-2 py-0.5 rounded font-bold ${
-                      item.workType === "video" ? "bg-purple-100 text-purple-600" : "bg-sky-100 text-sky-600"
-                    }`}>{item.workType === "video" ? "🎬 동영상" : "🖼️ 이미지"}</span>
-                    <span className="text-[9px] text-slate-400">{(item.file.size / 1024).toFixed(0)}KB</span>
-                    {item.status === "done" && <span className="text-[9px] text-emerald-600 font-bold">✓ 추가완료</span>}
-                    {item.status === "error" && <span className="text-[9px] text-red-500 font-bold">✗ 오류</span>}
-                  </div>
-                </div>
-
-                <button onClick={() => removeItem(item.id)} className="text-slate-300 hover:text-red-400 shrink-0">
-                  <X className="w-4 h-4" />
-                </button>
+        ))}
+      </div>
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+        <p className="text-xs font-black text-amber-700 mb-1">⚡ 여러 URL 한번에 붙여넣기</p>
+        <p className="text-[10px] text-amber-600">URL들을 줄바꿈으로 구분해서 첫 번째 칸에 붙여넣으면 자동으로 여러 행 생성</p>
+      </div>
+      <div className="flex gap-2 items-center bg-slate-50 border border-sky-100 rounded-xl p-3">
+        <Wand2 className="w-4 h-4 text-sky-500 shrink-0" />
+        <span className="text-xs font-bold text-slate-700 shrink-0">전체 카테고리:</span>
+        <select className={inp + " flex-1"} value={globalCat} onChange={e => setGlobalCat(e.target.value)}>
+          <option value="">선택...</option>
+          {KNOWN_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <button onClick={applyGlobalCat} className="shrink-0 px-3 py-1.5 bg-sky-500 text-white text-xs font-black rounded-lg">적용</button>
+      </div>
+      <div className="space-y-3">
+        <div className="flex justify-between items-center">
+          <span className="text-xs font-bold text-slate-600">총 {rows.length}개</span>
+          <button onClick={addRow} className="flex items-center gap-1 px-3 py-1.5 bg-sky-50 text-sky-600 text-xs rounded-lg border border-sky-200 font-bold"><Plus className="w-3 h-3" />행 추가</button>
+        </div>
+        {rows.map((row, idx) => (
+          <div key={row.id} className="bg-white border border-sky-100 rounded-xl p-3 space-y-2">
+            <div className="grid gap-2 items-start" style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr 28px" }}>
+              <div>
+                <label className={lbl}>URL</label>
+                <textarea rows={2} className={inp + " resize-none"} placeholder="https://drive.google.com/... 또는 https://youtu.be/..."
+                  value={row.url} onChange={e => handleUrlChange(row.id, e.target.value)}
+                  onPaste={idx === 0 ? handlePasteMultiple : undefined} />
+                {row.url && <span className="text-[9px] mt-0.5 block font-bold text-sky-500">🔗 {detectPlatform(row.url)}</span>}
               </div>
+              <div><label className={lbl}>제목</label><input className={inp} placeholder="작품 제목" value={row.title} onChange={e => updateRow(row.id, { title: e.target.value })} /></div>
+              <div><label className={lbl}>카테고리</label>
+                <select className={inp} value={row.category} onChange={e => updateRow(row.id, { category: e.target.value })}>
+                  {KNOWN_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  <option value="기타">기타</option>
+                </select>
+              </div>
+              <div><label className={lbl}>타입</label>
+                <select className={inp} value={row.workType} onChange={e => updateRow(row.id, { workType: e.target.value as "image"|"video" })}>
+                  <option value="image">🖼️ 이미지</option>
+                  <option value="video">▶️ 영상</option>
+                </select>
+              </div>
+              <button onClick={() => removeRow(row.id)} className="mt-4 text-slate-300 hover:text-red-400"><X className="w-4 h-4" /></button>
+            </div>
+            {row.workType === "video" && (
+              <div><label className={lbl}>썸네일 이미지 URL (선택)</label>
+                <input className={inp} placeholder="https://..." value={row.thumbUrl} onChange={e => updateRow(row.id, { thumbUrl: e.target.value })} />
+              </div>
+            )}
+            <div><label className={lbl}>설명 (선택)</label>
+              <input className={inp} placeholder="간단한 설명..." value={row.desc} onChange={e => updateRow(row.id, { desc: e.target.value })} />
+            </div>
+          </div>
+        ))}
+      </div>
+      {!done ? (
+        <button onClick={addAll} className="w-full py-3 rounded-xl font-black text-white text-sm hover:opacity-90" style={{ background: "#0ea5e9" }}>
+          ✨ {rows.filter(r => r.url.trim()).length}개 포트폴리오에 추가하기
+        </button>
+      ) : (
+        <div className="text-center space-y-3 py-4">
+          <div className="flex items-center justify-center gap-2 text-emerald-600">
+            <CheckCircle2 className="w-5 h-5" /><p className="font-black text-sm">추가 완료! 저장 버튼을 눌러 반영하세요.</p>
+          </div>
+          <button onClick={() => { setRows([{ id: `r-${Date.now()}`, url: "", thumbUrl: "", title: "", category: KNOWN_CATEGORIES[0], workType: "image", desc: "" }]); setDone(false); }}
+            className="px-4 py-2 bg-sky-50 border border-sky-200 text-sky-600 rounded-xl text-xs font-bold">+ 더 추가하기</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══ 디자인 미리보기 패널 ══
+function DesignPreview({ D }: { D: DesignSettings & { primaryColor: string } }) {
+  const p = D.primaryColor;
+  return (
+    <div className="sticky top-0 w-72 shrink-0 border-l border-sky-100 bg-slate-50 overflow-y-auto p-4 space-y-4">
+      <div className="flex items-center gap-2 pb-2 border-b border-sky-100">
+        <Monitor className="w-3.5 h-3.5 text-sky-500" />
+        <span className="text-[10px] font-black text-sky-600 uppercase tracking-wider">실시간 미리보기</span>
+      </div>
+
+      {/* 네비바 미리보기 */}
+      <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+        <div className="h-8 flex items-center px-3 gap-2" style={{ background: D.navBgColor || "#fff" }}>
+          <div className="w-5 h-5 rounded flex items-center justify-center text-white text-[8px] font-black" style={{ background: p }}>유</div>
+          <div className="flex gap-1.5 flex-1">
+            {["소개","프로젝트","스킬"].map((t,i) => (
+              <span key={t} className="text-[7px] px-1.5 py-0.5 rounded-full font-bold" style={{ background: i===0 ? p : "transparent", color: i===0 ? "#fff" : D.textColor+"99" }}>{t}</span>
             ))}
           </div>
+          <span className="text-[7px] px-2 py-0.5 rounded font-black text-white" style={{ background: D.btnPrimaryColor }}>{D.btnPrimaryLabel||"버튼"}</span>
+        </div>
+        {/* 진행바 */}
+        <div className="h-0.5 w-full" style={{ background: p+"20" }}>
+          <div className="h-full w-1/3 rounded-full" style={{ background: p }} />
+        </div>
+      </div>
 
-          {/* 추가 버튼 */}
-          {!done ? (
-            <button onClick={processAndAdd} disabled={processing}
-              className="w-full py-3 rounded-xl font-black text-white text-sm transition-all"
-              style={{ background: processing ? "#94a3b8" : "#0ea5e9" }}>
-              {processing ? "처리 중... 잠시만 기다려주세요" : `✨ ${items.filter(i => i.status === "pending").length}개 포트폴리오에 추가하기`}
-            </button>
-          ) : (
-            <div className="text-center space-y-3">
-              <p className="text-emerald-600 font-black text-sm">✓ {items.filter(i => i.status === "done").length}개 모두 추가됐습니다!</p>
-              <p className="text-xs text-slate-500">저장 버튼을 눌러야 최종 반영됩니다.</p>
-              <button onClick={() => { setItems([]); setDone(false); }}
-                className="px-4 py-2 bg-sky-50 border border-sky-200 text-sky-600 rounded-xl text-xs font-bold hover:bg-sky-100">
-                + 더 추가하기
-              </button>
+      {/* 히어로 섹션 미리보기 */}
+      <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+        <div className="p-3 space-y-2" style={{ background: D.bgColor }}>
+          <div className="text-[8px] font-black px-1.5 py-0.5 rounded-full w-fit border" style={{ color: p, background: p+"15", borderColor: p+"30" }}>01 | ABOUT</div>
+          <div className="text-[11px] font-black leading-tight" style={{ color: D.textColor }}>콘텐츠 크리에이터<br/><span style={{ color: p }}>유수경</span></div>
+          <div className="flex gap-1.5">
+            <span className="text-[8px] px-2 py-1 rounded font-black text-white" style={{ background: D.btnPrimaryColor }}>{D.btnPrimaryLabel||"포트폴리오"}</span>
+            <span className="text-[8px] px-2 py-1 rounded font-semibold border" style={{ background: D.btnSecondaryColor, color: p, borderColor: p+"30" }}>{D.btnSecondaryLabel||"연락망"}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 카드 미리보기 */}
+      <div className="rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-3 space-y-2" style={{ background: D.cardBgColor }}>
+          <div className="text-[9px] font-black" style={{ color: D.textColor }}>스킬 카드 미리보기</div>
+          {["Figma", "After Effects", "Premiere Pro"].map(s => (
+            <div key={s} className="flex items-center gap-2 p-1.5 rounded-lg" style={{ background: p+"10", border: `1px solid ${p}20` }}>
+              <div className="w-5 h-5 rounded bg-white flex items-center justify-center text-[7px] font-black border" style={{ color: p, borderColor: p+"20" }}>A</div>
+              <span className="text-[8px] font-bold flex-1" style={{ color: D.textColor }}>{s}</span>
+              <div className="h-1 w-10 rounded-full overflow-hidden" style={{ background: p+"20" }}>
+                <div className="h-full rounded-full w-4/5" style={{ background: p }} />
+              </div>
             </div>
-          )}
-        </>
-      )}
+          ))}
+        </div>
+      </div>
+
+      {/* 색상 팔레트 */}
+      <div className="space-y-1.5">
+        <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider">현재 색상</p>
+        <div className="flex flex-wrap gap-1.5">
+          {[
+            [D.primaryColor,"포인트"],
+            [D.bgColor,"배경"],
+            [D.textColor,"텍스트"],
+            [D.cardBgColor,"카드"],
+            [D.btnPrimaryColor,"버튼"],
+          ].map(([color, name]) => (
+            <div key={name} className="flex items-center gap-1">
+              <div className="w-4 h-4 rounded border border-slate-200 shadow-sm" style={{ background: color }} />
+              <span className="text-[8px] text-slate-500">{name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
 export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
   const [pw, setPw] = useState(""); const [auth, setAuth] = useState(false); const [err, setErr] = useState("");
-  const [tab, setTab] = useState<Tab>("design");
+  const [tab, setTab] = useState<Tab>("bulk");
   const [draft, setDraft] = useState<PortfolioData>(() => JSON.parse(JSON.stringify(data)));
-  const [dragIdx, setDragIdx] = useState<number|null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   const login = (e: FormEvent) => {
     e.preventDefault();
-    if (pw === "0119") {
-      setAuth(true);
-      setErr("");
-      onLogin?.(); // 로그인 성공 알림
-    } else setErr("비밀번호 오류");
+    if (pw === "0119") { setAuth(true); setErr(""); onLogin?.(); }
+    else setErr("비밀번호 오류");
   };
+
   const save = () => { onSave(draft); onClose(); };
   const reset = () => { if(confirm("초기화할까요?")) setDraft(JSON.parse(JSON.stringify(initialPortfolioData))); };
 
@@ -332,62 +371,30 @@ export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
   const inp = "w-full p-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:border-sky-400 focus:outline-none";
   const lbl = "block text-[10px] text-slate-500 mb-1 uppercase tracking-wider font-bold";
 
-  const tabs: {id:Tab;label:string;icon:string}[] = [
-    {id:"bulk",label:"📦 일괄업로드",icon:""},
-    {id:"design",label:"🎨 디자인",icon:""},
-    {id:"sections",label:"📝 섹션편집",icon:""},
-    {id:"profile",label:"프로필",icon:""},
-    {id:"stats",label:"통계",icon:""},
-    {id:"strengths",label:"강점",icon:""},
-    {id:"projects",label:"케이스",icon:""},
-    {id:"process",label:"프로세스",icon:""},
-    {id:"skills",label:"스킬",icon:""},
-    {id:"career",label:"경력",icon:""},
-    {id:"whyme",label:"Why Me",icon:""},
-    {id:"contact",label:"연락처",icon:""},
-    {id:"portfolio",label:"포트폴리오",icon:""},
-    {id:"tools",label:"도구",icon:""},
-  ];
-
-  // 텍스트 스타일 컨트롤
-  const TextStyleControls = ({ label, value, onChange }: {
-    label: string;
-    value?: { fontSize?: string; fontWeight?: string; lineBreak?: boolean };
-    onChange: (v: any) => void;
-  }) => {
-    const v = value || {};
-    return (
-      <div className="bg-sky-50 border border-sky-100 rounded-xl p-3 space-y-2 mt-1">
-        <p className="text-[9px] text-sky-600 font-black uppercase tracking-wider">{label} 스타일</p>
-        <div className="grid grid-cols-3 gap-2">
-          <div>
-            <label className={lbl}>크기</label>
-            <select className={inp + " text-xs cursor-pointer"} value={v.fontSize||""} onChange={e=>onChange({...v,fontSize:e.target.value||undefined})}>
-              <option value="">기본</option>
-              <option value="sm">작게</option><option value="base">보통</option>
-              <option value="lg">크게</option><option value="xl">더 크게</option>
-              <option value="2xl">2xl</option><option value="3xl">3xl</option>
-              <option value="4xl">4xl</option><option value="5xl">최대</option>
-            </select>
-          </div>
-          <div>
-            <label className={lbl}>굵기</label>
-            <select className={inp + " text-xs cursor-pointer"} value={v.fontWeight||""} onChange={e=>onChange({...v,fontWeight:e.target.value||undefined})}>
-              <option value="">기본</option><option value="normal">얇게</option>
-              <option value="medium">보통</option><option value="bold">굵게</option><option value="black">매우 굵게</option>
-            </select>
-          </div>
-          <div className="flex flex-col justify-end pb-1">
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input type="checkbox" checked={!!v.lineBreak} onChange={e=>onChange({...v,lineBreak:e.target.checked})} className="w-4 h-4 accent-sky-500" />
-              <span className="text-xs text-slate-600 font-bold">줄바꿈</span>
-            </label>
-            <p className="text-[9px] text-slate-400 mt-0.5">\n으로 줄바꿈</p>
-          </div>
-        </div>
-      </div>
-    );
+  // 섹션 업데이트 헬퍼
+  const upSection = (sec: keyof SectionHeaders, key: string, val: any) => {
+    const d = JSON.parse(JSON.stringify(draft));
+    if (!d.sections) d.sections = JSON.parse(JSON.stringify(initialPortfolioData.sections));
+    d.sections[sec][key] = val;
+    setDraft(d);
   };
+
+  const tabs: {id:Tab;label:string}[] = [
+    {id:"bulk",label:"🔗 URL로 추가"},
+    {id:"portfolio",label:"📂 포트폴리오"},
+    {id:"design",label:"🎨 디자인"},
+    {id:"sections",label:"📝 섹션 텍스트"},
+    {id:"profile",label:"👤 프로필"},
+    {id:"stats",label:"📊 통계"},
+    {id:"strengths",label:"💪 강점"},
+    {id:"projects",label:"📁 케이스"},
+    {id:"process",label:"⚙️ 프로세스"},
+    {id:"skills",label:"🛠️ 스킬"},
+    {id:"career",label:"🏢 경력"},
+    {id:"whyme",label:"✨ Why Me"},
+    {id:"contact",label:"📞 연락처"},
+    {id:"tools",label:"🔧 도구"},
+  ];
 
   if (!auth) return (
     <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
@@ -407,10 +414,18 @@ export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
   return (
     <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
       className="fixed inset-0 z-[100] bg-white flex flex-col">
+
       {/* 헤더 */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-sky-100 bg-white shrink-0 shadow-sm">
-        <div className="flex items-center gap-2"><Settings className="w-4 h-4 text-sky-500"/><span className="text-slate-800 font-black text-sm">포트폴리오 편집</span></div>
+        <div className="flex items-center gap-2">
+          <Settings className="w-4 h-4 text-sky-500"/>
+          <span className="text-slate-800 font-black text-sm">포트폴리오 편집</span>
+        </div>
         <div className="flex gap-2">
+          <button onClick={() => setShowPreview(!showPreview)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${showPreview ? "bg-sky-500 text-white border-sky-600" : "bg-sky-50 border-sky-200 text-sky-600"}`}>
+            <Monitor className="w-3 h-3"/>미리보기 {showPreview ? "ON" : "OFF"}
+          </button>
           <button onClick={reset} className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-50 border border-orange-200 text-orange-600 rounded-lg text-xs hover:bg-orange-100">
             <RotateCcw className="w-3 h-3"/>초기화
           </button>
@@ -434,10 +449,81 @@ export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
           ))}
         </nav>
 
-        {/* 메인 컨텐츠 */}
+        {/* 메인 */}
         <main className="flex-1 overflow-y-auto p-6 bg-white">
 
-          {/* ══ 디자인 탭 ══ */}
+          {/* ══ URL로 일괄 추가 ══ */}
+          {tab==="bulk" && <BulkUrlTab draft={draft} setDraft={setDraft} />}
+
+          {/* ══ 포트폴리오 ══ */}
+          {tab==="portfolio" && (
+            <div className="space-y-5 max-w-2xl">
+              <div className="flex justify-between items-center border-b border-sky-100 pb-2">
+                <h3 className="text-sky-600 font-black text-sm">포트폴리오 작품</h3>
+                <button onClick={()=>setDraft({...draft,portfolioWorks:[...(draft.portfolioWorks||[]),{id:`w-${Date.now()}`,title:"새 작품",category:KNOWN_CATEGORIES[0],description:"",imageUrl:"",workType:"image"}]})}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-sky-50 text-sky-600 text-xs rounded-lg border border-sky-200 font-bold"><Plus className="w-3 h-3"/>추가</button>
+              </div>
+              <div className="bg-sky-50 border border-sky-100 rounded-xl p-3 text-xs text-slate-600">
+                <p className="font-black text-sky-700 mb-1">💡 URL 입력 가이드</p>
+                <p>· Google Drive: 파일 우클릭 → 공유 → 링크 복사</p>
+                <p>· YouTube: 공유 버튼 → 링크 복사</p>
+              </div>
+              {(draft.portfolioWorks||[]).map((w,i)=>(
+                <div key={w.id} className="bg-slate-50 border border-sky-100 rounded-xl p-4 space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-sky-500 text-xs font-black">작품 {i+1}</span>
+                    <button onClick={()=>setDraft({...draft,portfolioWorks:(draft.portfolioWorks||[]).filter((_,idx)=>idx!==i)})} className="text-red-400"><Trash2 className="w-3.5 h-3.5"/></button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="col-span-2"><label className={lbl}>제목</label><input className={inp} value={w.title} onChange={e=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],title:e.target.value};setDraft({...draft,portfolioWorks:a});}}/></div>
+                    <div><label className={lbl}>카테고리</label>
+                      <select className={inp+" text-xs cursor-pointer"} value={w.category} onChange={e=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],category:e.target.value};setDraft({...draft,portfolioWorks:a});}}>
+                        {KNOWN_CATEGORIES.map(c=><option key={c}>{c}</option>)}
+                        <option value="기타">기타</option>
+                      </select>
+                    </div>
+                    <div><label className={lbl}>타입</label>
+                      <select className={inp+" cursor-pointer text-xs"} value={w.workType||"image"} onChange={e=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],workType:e.target.value as any,videoUrl:undefined};setDraft({...draft,portfolioWorks:a});}}>
+                        <option value="image">🖼️ 이미지</option><option value="video">▶️ 영상</option>
+                      </select>
+                    </div>
+                    <div className="col-span-2"><label className={lbl}>설명</label><textarea rows={2} className={inp+" resize-none"} value={w.description} onChange={e=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],description:e.target.value};setDraft({...draft,portfolioWorks:a});}}/></div>
+                  </div>
+                  {w.workType!=="video" && (
+                    <div>
+                      <label className={lbl}>🔗 이미지 URL</label>
+                      <input type="text" className={inp} placeholder="https://drive.google.com/file/d/.../view" value={w.imageUrl}
+                        onChange={e=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],imageUrl:normalizeImageUrl(e.target.value)};setDraft({...draft,portfolioWorks:a});}}/>
+                      {w.imageUrl && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <img src={w.imageUrl} className="w-20 h-14 rounded-lg object-cover border border-sky-200" alt="prev" onError={e=>(e.currentTarget.style.display="none")}/>
+                          <span className="text-[10px] text-sky-600 font-bold">{detectPlatform(w.imageUrl)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {w.workType==="video" && (
+                    <div className="space-y-2">
+                      <div>
+                        <label className={lbl}>▶️ 영상 URL</label>
+                        <input type="text" className={inp} placeholder="https://youtu.be/xxx"
+                          value={w.videoUrl||""} onChange={e=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],videoUrl:e.target.value};setDraft({...draft,portfolioWorks:a});}}/>
+                        {w.videoUrl && <span className="text-[10px] text-sky-600 font-bold mt-0.5 block">🔗 {detectPlatform(w.videoUrl)}</span>}
+                      </div>
+                      <div>
+                        <label className={lbl}>🖼️ 썸네일 URL</label>
+                        <input type="text" className={inp} placeholder="https://drive.google.com/file/d/.../view"
+                          value={w.imageUrl} onChange={e=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],imageUrl:normalizeImageUrl(e.target.value)};setDraft({...draft,portfolioWorks:a});}}/>
+                        {w.imageUrl && <img src={w.imageUrl} className="mt-2 w-20 h-14 rounded-lg object-cover border border-sky-200" alt="thumb" onError={e=>(e.currentTarget.style.display="none")}/>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ══ 디자인 ══ */}
           {tab==="design" && (
             <div className="space-y-6 max-w-2xl">
               <h3 className="text-sky-600 font-black text-sm border-b border-sky-100 pb-2 flex items-center gap-2"><Palette className="w-4 h-4"/>디자인 설정</h3>
@@ -448,38 +534,30 @@ export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
                 <div className="grid grid-cols-2 gap-4">
                   {([
                     ["primaryColor","포인트 컬러"],["bgColor","배경색"],
-                    ["textColor","텍스트 기본색"],["cardBgColor","카드 배경색"],["navBgColor","네비 배경색"],
-                    ["btnPrimaryColor","버튼 기본 색상"],["btnSecondaryColor","버튼 보조 색상"],
+                    ["textColor","텍스트색"],["cardBgColor","카드 배경"],
+                    ["navBgColor","네비 배경"],["btnPrimaryColor","메인 버튼색"],
+                    ["btnSecondaryColor","보조 버튼색"],["btnPrimaryText","버튼 텍스트색"],
                   ] as [keyof DesignSettings, string][]).map(([k,label])=>(
                     <div key={k} className="flex items-center gap-3">
                       <input type="color" value={(D[k] as string)||"#000000"} onChange={e=>upDesign(k,e.target.value)}
-                        className="w-10 h-10 rounded-lg cursor-pointer border border-slate-200 p-0.5" />
-                      <div>
+                        className="w-10 h-10 rounded-lg cursor-pointer border border-slate-200 p-0.5 shrink-0"/>
+                      <div className="min-w-0">
                         <label className={lbl}>{label}</label>
-                        <input className="w-full p-1.5 bg-white border border-slate-200 rounded text-xs font-mono" value={(D[k] as string)||""} onChange={e=>upDesign(k,e.target.value)} />
+                        <input className="w-full p-1.5 bg-white border border-slate-200 rounded text-xs font-mono" value={(D[k] as string)||""} onChange={e=>upDesign(k,e.target.value)}/>
                       </div>
                     </div>
                   ))}
-                  <div className="flex items-center gap-3">
-                    <input type="color" value={D.btnPrimaryText||"#ffffff"} onChange={e=>upDesign("btnPrimaryText",e.target.value)}
-                      className="w-10 h-10 rounded-lg cursor-pointer border border-slate-200 p-0.5" />
-                    <div>
-                      <label className={lbl}>버튼 텍스트 색</label>
-                      <input className="w-full p-1.5 bg-white border border-slate-200 rounded text-xs font-mono" value={D.btnPrimaryText||""} onChange={e=>upDesign("btnPrimaryText",e.target.value)} />
-                    </div>
-                  </div>
                 </div>
               </div>
 
               {/* 버튼 텍스트 */}
               <div className="bg-slate-50 border border-sky-100 rounded-2xl p-5 space-y-3">
-                <p className="text-xs font-black text-slate-700">🔘 버튼 텍스트</p>
+                <p className="text-xs font-black text-slate-700">🔘 버튼 라벨</p>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className={lbl}>메인 버튼 텍스트</label><input className={inp} value={D.btnPrimaryLabel} onChange={e=>upDesign("btnPrimaryLabel",e.target.value)}/></div>
-                  <div><label className={lbl}>보조 버튼 텍스트</label><input className={inp} value={D.btnSecondaryLabel} onChange={e=>upDesign("btnSecondaryLabel",e.target.value)}/></div>
+                  <div><label className={lbl}>메인 버튼</label><input className={inp} value={D.btnPrimaryLabel} onChange={e=>upDesign("btnPrimaryLabel",e.target.value)}/></div>
+                  <div><label className={lbl}>보조 버튼</label><input className={inp} value={D.btnSecondaryLabel} onChange={e=>upDesign("btnSecondaryLabel",e.target.value)}/></div>
                 </div>
-                {/* 미리보기 */}
-                <div className="flex gap-3 pt-2">
+                <div className="flex gap-3 pt-1">
                   <button className="py-2 px-5 rounded-xl text-sm font-black" style={{background:D.btnPrimaryColor,color:D.btnPrimaryText}}>{D.btnPrimaryLabel}</button>
                   <button className="py-2 px-5 rounded-xl text-sm font-semibold border" style={{background:D.btnSecondaryColor,color:D.primaryColor,borderColor:D.primaryColor+"30"}}>{D.btnSecondaryLabel}</button>
                 </div>
@@ -489,71 +567,53 @@ export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
               <div className="bg-slate-50 border border-sky-100 rounded-2xl p-5 space-y-3">
                 <p className="text-xs font-black text-slate-700">🖼️ 배경 스타일</p>
                 <div className="flex gap-3">
-                  {([["gradient","그라디언트"],["color","단색"],["image","이미지"]] as const).map(([v,l])=>(
+                  {([["gradient","그라디언트"],["color","단색"],["image","이미지URL"]] as const).map(([v,l])=>(
                     <button key={v} onClick={()=>upDesign("heroBgType",v)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${D.heroBgType===v?"bg-sky-500 text-white border-sky-600":"bg-white text-slate-600 border-slate-200"}`}>
-                      {l}
-                    </button>
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${D.heroBgType===v?"bg-sky-500 text-white border-sky-600":"bg-white text-slate-600 border-slate-200"}`}>{l}</button>
                   ))}
                 </div>
                 {D.heroBgType==="color" && (
                   <div className="flex items-center gap-3">
-                    <input type="color" value={D.heroBgValue||"#e0f2fe"} onChange={e=>upDesign("heroBgValue",e.target.value)} className="w-10 h-10 rounded-lg cursor-pointer border p-0.5" />
-                    <input className={inp} value={D.heroBgValue||""} onChange={e=>upDesign("heroBgValue",e.target.value)} />
+                    <input type="color" value={D.heroBgValue||"#e0f2fe"} onChange={e=>upDesign("heroBgValue",e.target.value)} className="w-10 h-10 rounded-lg cursor-pointer border p-0.5"/>
+                    <input className={inp} value={D.heroBgValue||""} onChange={e=>upDesign("heroBgValue",e.target.value)}/>
                   </div>
                 )}
                 {D.heroBgType==="image" && (
-                  <div>
-                    <label className="flex items-center gap-2 px-3 py-2 bg-sky-50 border border-sky-200 rounded-xl text-xs text-sky-600 cursor-pointer hover:bg-sky-100 font-bold w-fit">
-                      <Upload className="w-3.5 h-3.5"/>배경 이미지 업로드
-                      <input type="file" accept="image/*" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)compress(f,1920,1080,b=>upDesign("heroBgValue",b));}}/>
-                    </label>
-                    {D.heroBgValue && <img src={D.heroBgValue} className="mt-2 w-full h-24 object-cover rounded-xl border border-sky-100" alt="bg preview"/>}
+                  <div><label className={lbl}>배경 이미지 URL</label>
+                    <input className={inp} placeholder="https://..." value={D.heroBgValue||""} onChange={e=>upDesign("heroBgValue",normalizeImageUrl(e.target.value))}/>
                   </div>
                 )}
               </div>
 
               {/* 전체 폰트 크기 */}
               <div className="bg-slate-50 border border-sky-100 rounded-2xl p-5 space-y-3">
-                <p className="text-xs font-black text-slate-700">🔤 전체 폰트 크기</p>
+                <p className="text-xs font-black text-slate-700">🔤 전체 기본 폰트 크기</p>
                 <div className="flex gap-3">
-                  {([["sm","작게"],["base","기본"],["lg","크게"]] as const).map(([v,l])=>(
+                  {([["sm","작게(sm)"],["base","기본(base)"],["lg","크게(lg)"]] as const).map(([v,l])=>(
                     <button key={v} onClick={()=>upDesign("globalFontSize",v)}
-                      className={`px-4 py-2 rounded-lg text-xs font-bold border ${D.globalFontSize===v?"bg-sky-500 text-white border-sky-600":"bg-white text-slate-600 border-slate-200"}`}>
-                      {l}
-                    </button>
+                      className={`px-4 py-2 rounded-lg text-xs font-bold border ${D.globalFontSize===v?"bg-sky-500 text-white border-sky-600":"bg-white text-slate-600 border-slate-200"}`}>{l}</button>
                   ))}
                 </div>
+                <p className="text-[10px] text-slate-400">※ 섹션별 개별 크기는 📝 섹션 텍스트 탭에서 조절</p>
               </div>
 
-              {/* 섹션 순서 + 보이기/숨기기 */}
+              {/* 섹션 순서/보이기 */}
               <div className="bg-slate-50 border border-sky-100 rounded-2xl p-5 space-y-3">
                 <p className="text-xs font-black text-slate-700">📋 섹션 순서 & 보이기/숨기기</p>
-                <p className="text-[10px] text-slate-400">위아래 버튼으로 순서 변경, 눈 아이콘으로 보이기/숨기기</p>
                 <div className="space-y-2">
-                  {(D.sectionOrder||[]).map((secId, idx) => {
+                  {(D.sectionOrder||[]).map((secId,idx) => {
                     const secData = draft.sections?.[secId as keyof SectionHeaders];
                     const visible = secData ? (secData.visible !== false) : true;
                     return (
                       <div key={secId} className="flex items-center gap-2 bg-white border border-sky-100 rounded-xl px-3 py-2">
-                        <GripVertical className="w-4 h-4 text-slate-300 shrink-0" />
+                        <GripVertical className="w-4 h-4 text-slate-300 shrink-0"/>
                         <span className="text-xs font-bold text-slate-700 flex-1">{SECTION_LABELS[secId]||secId}</span>
                         <div className="flex gap-1">
-                          <button onClick={() => {
-                            const arr = [...(D.sectionOrder||[])];
-                            if(idx>0){[arr[idx-1],arr[idx]]=[arr[idx],arr[idx-1]];upDesign("sectionOrder",arr);}
-                          }} className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 hover:bg-sky-100 text-slate-500 hover:text-sky-600 text-xs font-black">↑</button>
-                          <button onClick={() => {
-                            const arr = [...(D.sectionOrder||[])];
-                            if(idx<arr.length-1){[arr[idx+1],arr[idx]]=[arr[idx],arr[idx+1]];upDesign("sectionOrder",arr);}
-                          }} className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 hover:bg-sky-100 text-slate-500 hover:text-sky-600 text-xs font-black">↓</button>
-                          <button onClick={() => {
-                            const d = JSON.parse(JSON.stringify(draft));
-                            if(!d.sections) d.sections = JSON.parse(JSON.stringify(initialPortfolioData.sections));
-                            d.sections[secId].visible = !visible;
-                            setDraft(d);
-                          }} className={`w-6 h-6 flex items-center justify-center rounded text-xs ${visible?"bg-sky-100 text-sky-600":"bg-slate-200 text-slate-400"}`}>
-                            {visible ? <Eye className="w-3.5 h-3.5"/> : <EyeOff className="w-3.5 h-3.5"/>}
+                          <button onClick={()=>{const a=[...(D.sectionOrder||[])];if(idx>0){[a[idx-1],a[idx]]=[a[idx],a[idx-1]];upDesign("sectionOrder",a);}}} className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 hover:bg-sky-100 text-slate-500 text-xs font-black">↑</button>
+                          <button onClick={()=>{const a=[...(D.sectionOrder||[])];if(idx<a.length-1){[a[idx+1],a[idx]]=[a[idx],a[idx+1]];upDesign("sectionOrder",a);}}} className="w-6 h-6 flex items-center justify-center rounded bg-slate-100 hover:bg-sky-100 text-slate-500 text-xs font-black">↓</button>
+                          <button onClick={()=>{const d=JSON.parse(JSON.stringify(draft));if(!d.sections)d.sections=JSON.parse(JSON.stringify(initialPortfolioData.sections));d.sections[secId].visible=!visible;setDraft(d);}}
+                            className={`w-6 h-6 flex items-center justify-center rounded text-xs ${visible?"bg-sky-100 text-sky-600":"bg-slate-200 text-slate-400"}`}>
+                            {visible?<Eye className="w-3.5 h-3.5"/>:<EyeOff className="w-3.5 h-3.5"/>}
                           </button>
                         </div>
                       </div>
@@ -564,40 +624,38 @@ export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
             </div>
           )}
 
-          {/* ══ 섹션 제목/소제목 편집 ══ */}
+          {/* ══ 섹션 텍스트 편집 ══ */}
           {tab==="sections" && (
             <div className="space-y-5 max-w-2xl">
               <div className="flex items-center gap-2 border-b border-sky-100 pb-2">
                 <Type className="w-4 h-4 text-sky-500"/>
-                <h3 className="text-sky-600 font-black text-sm">섹션 제목 · 소제목 · 본문 편집</h3>
+                <h3 className="text-sky-600 font-black text-sm">섹션별 텍스트 · 폰트 크기 편집</h3>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700">
+                💡 Enter키로 줄바꿈하면 실제 사이트에도 그대로 반영됩니다.
               </div>
               {(Object.keys(draft.sections||{}) as Array<keyof SectionHeaders>).map(sec=>(
                 <div key={sec} className="bg-slate-50 border border-sky-100 rounded-2xl p-5 space-y-3">
                   <span className="bg-sky-500 text-white text-[9px] font-black px-2 py-0.5 rounded uppercase">{SECTION_LABELS[sec]||sec}</span>
-                  <div><label className={lbl}>뱃지 (상단 작은 태그)</label>
-                    <input className={inp} value={draft.sections?.[sec]?.badge||""} onChange={e=>{
-                      const d=JSON.parse(JSON.stringify(draft));
-                      if(!d.sections)d.sections=JSON.parse(JSON.stringify(initialPortfolioData.sections));
-                      d.sections[sec].badge=e.target.value;setDraft(d);
-                    }}/>
+                  <div>
+                    <label className={lbl}>뱃지 텍스트</label>
+                    <input className={inp} value={draft.sections?.[sec]?.badge||""} onChange={e=>upSection(sec,"badge",e.target.value)}/>
                   </div>
-                  <div><label className={lbl}>제목</label>
-                    <input className={inp} value={draft.sections?.[sec]?.title||""} onChange={e=>{
-                      const d=JSON.parse(JSON.stringify(draft));
-                      if(!d.sections)d.sections=JSON.parse(JSON.stringify(initialPortfolioData.sections));
-                      d.sections[sec].title=e.target.value;setDraft(d);
-                    }}/>
+                  <div>
+                    <label className={lbl}>제목 <span className="text-sky-400 normal-case font-normal">(Enter = 줄바꿈)</span></label>
+                    <textarea rows={2} className={inp+" resize-none"}
+                      value={fromStored(draft.sections?.[sec]?.title||"")}
+                      onChange={e=>upSection(sec,"title",toStored(e.target.value))}/>
                     <TextStyleControls label="제목" value={draft.sections?.[sec]?.titleStyle}
-                      onChange={v=>{const d=JSON.parse(JSON.stringify(draft));if(!d.sections)d.sections=JSON.parse(JSON.stringify(initialPortfolioData.sections));d.sections[sec].titleStyle=v;setDraft(d);}}/>
+                      onChange={v=>upSection(sec,"titleStyle",v)}/>
                   </div>
-                  <div><label className={lbl}>소제목 / 본문 <span className="text-sky-400 normal-case">(줄바꿈: \n 입력)</span></label>
-                    <textarea rows={3} className={inp+" resize-none"} value={draft.sections?.[sec]?.subtitle||""} onChange={e=>{
-                      const d=JSON.parse(JSON.stringify(draft));
-                      if(!d.sections)d.sections=JSON.parse(JSON.stringify(initialPortfolioData.sections));
-                      d.sections[sec].subtitle=e.target.value;setDraft(d);
-                    }}/>
+                  <div>
+                    <label className={lbl}>소제목 <span className="text-sky-400 normal-case font-normal">(Enter = 줄바꿈)</span></label>
+                    <textarea rows={3} className={inp+" resize-none"}
+                      value={fromStored(draft.sections?.[sec]?.subtitle||"")}
+                      onChange={e=>upSection(sec,"subtitle",toStored(e.target.value))}/>
                     <TextStyleControls label="소제목" value={draft.sections?.[sec]?.subtitleStyle}
-                      onChange={v=>{const d=JSON.parse(JSON.stringify(draft));if(!d.sections)d.sections=JSON.parse(JSON.stringify(initialPortfolioData.sections));d.sections[sec].subtitleStyle=v;setDraft(d);}}/>
+                      onChange={v=>upSection(sec,"subtitleStyle",v)}/>
                   </div>
                 </div>
               ))}
@@ -608,21 +666,35 @@ export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
           {tab==="profile" && (
             <div className="space-y-4 max-w-xl">
               <h3 className="text-sky-600 font-black text-sm border-b border-sky-100 pb-2">기본 프로필</h3>
-              {(["name","engName","title"] as const).map(k=>(
-                <div key={k}><label className={lbl}>{k}</label><input className={inp} value={draft.profile[k]||""} onChange={e=>setDraft({...draft,profile:{...draft.profile,[k]:e.target.value}})}/></div>
-              ))}
-              <div><label className={lbl}>헤드라인 <span className="text-sky-400 normal-case">(유수경, 유수(流水) → 자동 KCC 폰트 적용)</span></label>
-                <textarea rows={3} className={inp+" resize-none"} value={draft.profile.headline||""} onChange={e=>setDraft({...draft,profile:{...draft.profile,headline:e.target.value}})}/>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700">
+                💡 Enter키로 줄바꿈하면 사이트에 그대로 반영됩니다.
               </div>
-              <div><label className={lbl}>서브 헤드라인</label>
-                <textarea rows={3} className={inp+" resize-none"} value={draft.profile.subHeadline||""} onChange={e=>setDraft({...draft,profile:{...draft.profile,subHeadline:e.target.value}})}/>
+              <div><label className={lbl}>이름</label><input className={inp} value={draft.profile.name||""} onChange={e=>setDraft({...draft,profile:{...draft.profile,name:e.target.value}})}/></div>
+              <div><label className={lbl}>영문 이름</label><input className={inp} value={draft.profile.engName||""} onChange={e=>setDraft({...draft,profile:{...draft.profile,engName:e.target.value}})}/></div>
+              <div><label className={lbl}>직함</label><input className={inp} value={draft.profile.title||""} onChange={e=>setDraft({...draft,profile:{...draft.profile,title:e.target.value}})}/></div>
+              <div>
+                <label className={lbl}>헤드라인 <span className="text-sky-400 normal-case font-normal">(Enter = 줄바꿈)</span></label>
+                <textarea rows={3} className={inp+" resize-none"}
+                  value={fromStored(draft.profile.headline||"")}
+                  onChange={e=>setDraft({...draft,profile:{...draft.profile,headline:toStored(e.target.value)}})}/>
+              </div>
+              <div>
+                <label className={lbl}>서브 헤드라인 <span className="text-sky-400 normal-case font-normal">(Enter = 줄바꿈)</span></label>
+                <textarea rows={4} className={inp+" resize-none"}
+                  value={fromStored(draft.profile.subHeadline||"")}
+                  onChange={e=>setDraft({...draft,profile:{...draft.profile,subHeadline:toStored(e.target.value)}})}/>
               </div>
               <div>
                 <label className={lbl}>프로필 사진</label>
-                <div className="flex gap-3 items-center mt-1">
+                <div className="space-y-2 mt-1">
                   {draft.profile.idPhoto && <img src={draft.profile.idPhoto} className="w-16 h-20 rounded-xl object-cover border border-sky-200" alt="prev"/>}
-                  <label className="flex items-center gap-2 px-3 py-2 bg-sky-50 border border-sky-200 rounded-xl text-xs text-sky-600 cursor-pointer hover:bg-sky-100 font-bold">
-                    <Upload className="w-3.5 h-3.5"/>사진 업로드
+                  <div><label className={lbl}>사진 URL (Google Drive / Cloudinary)</label>
+                    <input className={inp} placeholder="https://drive.google.com/file/d/.../view" value={draft.profile.idPhoto||""}
+                      onChange={e=>setDraft({...draft,profile:{...draft.profile,idPhoto:normalizeImageUrl(e.target.value)}})}/>
+                  </div>
+                  <p className="text-[10px] text-slate-400">또는</p>
+                  <label className="flex items-center gap-2 px-3 py-2 bg-sky-50 border border-sky-200 rounded-xl text-xs text-sky-600 cursor-pointer hover:bg-sky-100 font-bold w-fit">
+                    <Upload className="w-3.5 h-3.5"/>직접 업로드 (소용량)
                     <input type="file" accept="image/*" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)compress(f,800,1000,b=>setDraft({...draft,profile:{...draft.profile,idPhoto:b}}));}}/>
                   </label>
                   {draft.profile.idPhoto && <button onClick={()=>setDraft({...draft,profile:{...draft.profile,idPhoto:""}})} className="text-xs text-red-400">삭제</button>}
@@ -761,7 +833,7 @@ export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
             <div className="space-y-5 max-w-xl">
               <div className="flex justify-between items-center border-b border-sky-100 pb-2">
                 <h3 className="text-sky-600 font-black text-sm">경력</h3>
-                <button onClick={()=>setDraft({...draft,careers:[...draft.careers,{id:`c-${Date.now()}`,period:"20XX — 현재",company:"회사명",role:"광고 디자이너 & 콘텐츠 디자이너",details:[]}]})}
+                <button onClick={()=>setDraft({...draft,careers:[...draft.careers,{id:`c-${Date.now()}`,period:"20XX — 현재",company:"회사명",role:"광고 디자이너",details:[]}]})}
                   className="flex items-center gap-1 px-3 py-1.5 bg-sky-50 text-sky-600 text-xs rounded-lg border border-sky-200 font-bold"><Plus className="w-3 h-3"/>추가</button>
               </div>
               {draft.careers.map((c,i)=>(
@@ -816,85 +888,6 @@ export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
             </div>
           )}
 
-          {/* ══ 포트폴리오 ══ */}
-          {tab==="portfolio" && (
-            <div className="space-y-5 max-w-2xl">
-              <div className="flex justify-between items-center border-b border-sky-100 pb-2">
-                <h3 className="text-sky-600 font-black text-sm">포트폴리오 작품</h3>
-                <button onClick={()=>setDraft({...draft,portfolioWorks:[...(draft.portfolioWorks||[]),{id:`w-${Date.now()}`,title:"새 작품",category:"카테고리",description:"",imageUrl:"",workType:"image"}]})}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-sky-50 text-sky-600 text-xs rounded-lg border border-sky-200 font-bold"><Plus className="w-3 h-3"/>추가</button>
-              </div>
-              {(draft.portfolioWorks||[]).map((w,i)=>(
-                <div key={w.id} className="bg-slate-50 border border-sky-100 rounded-xl p-4 space-y-3">
-                  <div className="flex justify-between"><span className="text-sky-500 text-xs font-black">작품 {i+1}</span>
-                    <button onClick={()=>setDraft({...draft,portfolioWorks:(draft.portfolioWorks||[]).filter((_,idx)=>idx!==i)})} className="text-red-400"><Trash2 className="w-3.5 h-3.5"/></button></div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="col-span-2"><label className={lbl}>제목</label><input className={inp} value={w.title} onChange={e=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],title:e.target.value};setDraft({...draft,portfolioWorks:a});}}/></div>
-                    <div><label className={lbl}>카테고리</label><input className={inp} value={w.category} onChange={e=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],category:e.target.value};setDraft({...draft,portfolioWorks:a});}}/></div>
-                    <div><label className={lbl}>타입</label>
-                      <select className={inp+" cursor-pointer text-xs"} value={w.workType||"image"} onChange={e=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],workType:e.target.value as any,videoBase64:undefined};setDraft({...draft,portfolioWorks:a});}}>
-                        <option value="image">이미지</option><option value="video">동영상</option>
-                      </select>
-                    </div>
-                    <div className="col-span-2"><label className={lbl}>설명</label><textarea rows={2} className={inp+" resize-none"} value={w.description} onChange={e=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],description:e.target.value};setDraft({...draft,portfolioWorks:a});}}/></div>
-                  </div>
-
-                  {/* 이미지 업로드 */}
-                  {w.workType!=="video" && (
-                    <div>
-                      <label className={lbl}>이미지</label>
-                      <div className="flex gap-3 items-center mb-2">
-                        {w.imageUrl && <img src={w.imageUrl} className="w-16 h-12 rounded-lg object-cover border border-sky-200" alt="prev" onError={e=>(e.currentTarget.style.display="none")}/>}
-                        <label className="flex items-center gap-2 px-3 py-2 bg-sky-50 border border-sky-200 rounded-xl text-xs text-sky-600 cursor-pointer hover:bg-sky-100 font-bold">
-                          <Upload className="w-3.5 h-3.5"/>이미지 업로드
-                          <input type="file" accept="image/*" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)compress(f,1000,1050,b=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],imageUrl:b};setDraft({...draft,portfolioWorks:a});});}}/>
-                        </label>
-                      </div>
-                      <input type="text" className={inp} placeholder="또는 이미지 URL 입력" value={w.imageUrl} onChange={e=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],imageUrl:e.target.value};setDraft({...draft,portfolioWorks:a});}}/>
-                    </div>
-                  )}
-
-                  {/* 동영상 업로드 */}
-                  {w.workType==="video" && (
-                    <div className="space-y-2">
-                      <label className={lbl}><Film className="w-3 h-3 inline mr-1"/>동영상 (컴퓨터에서 직접 업로드)</label>
-                      <label className="flex items-center gap-2 px-3 py-2 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-600 cursor-pointer hover:bg-purple-100 font-bold w-fit">
-                        <Upload className="w-3.5 h-3.5"/>동영상 파일 업로드 (mp4, mov 등)
-                        <input type="file" accept="video/*" className="hidden" onChange={e=>{
-                          const f=e.target.files?.[0]; if(!f) return;
-                          if(f.size > 50*1024*1024){alert("50MB 이하 파일만 업로드 가능합니다.");return;}
-                          const r=new FileReader();
-                          r.onload=ev=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],videoBase64:ev.target?.result as string,imageUrl:a[i].imageUrl||""};setDraft({...draft,portfolioWorks:a});};
-                          r.readAsDataURL(f);
-                        }}/>
-                      </label>
-                      {w.videoBase64 && <p className="text-xs text-emerald-600 font-bold">✓ 동영상 업로드 완료</p>}
-                      <div>
-                        <label className={lbl}>또는 URL 입력 (YouTube, Vimeo 등)</label>
-                        <input type="text" className={inp} placeholder="https://youtube.com/watch?v=..." value={w.videoUrl||""} onChange={e=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],videoUrl:e.target.value};setDraft({...draft,portfolioWorks:a});}}/>
-                      </div>
-                      <div>
-                        <label className={lbl}>썸네일 이미지</label>
-                        <div className="flex gap-2 items-center">
-                          {w.imageUrl && <img src={w.imageUrl} className="w-14 h-10 rounded-lg object-cover border border-sky-200" alt="thumb" onError={e=>(e.currentTarget.style.display="none")}/>}
-                          <label className="flex items-center gap-2 px-3 py-2 bg-sky-50 border border-sky-200 rounded-xl text-xs text-sky-600 cursor-pointer hover:bg-sky-100 font-bold">
-                            <Upload className="w-3 h-3"/>썸네일 업로드
-                            <input type="file" accept="image/*" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f)compress(f,600,400,b=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],imageUrl:b};setDraft({...draft,portfolioWorks:a});});}}/>
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* ══ 일괄 업로드 ══ */}
-          {tab==="bulk" && (
-            <BulkUploadTab draft={draft} setDraft={setDraft} compress={compress} />
-          )}
-
           {/* ══ 도구 ══ */}
           {tab==="tools" && (
             <div className="space-y-4 max-w-xl">
@@ -914,6 +907,9 @@ export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
           )}
 
         </main>
+
+        {/* ══ 디자인 실시간 미리보기 패널 ══ */}
+        {showPreview && <DesignPreview D={D as any} />}
       </div>
     </motion.div>
   );
