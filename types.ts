@@ -13,9 +13,16 @@ export interface ProcessStep { id: string; phase: string; title: string; desc: s
 export interface Skill { id: string; category: "Design"|"Video"|"Marketing"; name: string; rating: number; }
 export interface Career { id: string; period: string; company: string; role: string; details: string[]; }
 export interface Contact { email: string; phone?: string; }
+export interface PortfolioLink {
+  label: string; // e.g. "PPT 보기", "Instagram", "Behance"
+  url: string;
+  type: "ppt"|"instagram"|"youtube"|"behance"|"figma"|"other";
+}
+
 export interface PortfolioWork {
   id: string; title: string; category: string; description: string;
   imageUrl: string; workType?: "image"|"video"; videoUrl?: string; videoBase64?: string;
+  links?: PortfolioLink[];
 }
 export interface Tool { id: string; name: string; iconUrl: string; }
 
