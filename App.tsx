@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import {
 Menu, X, Sparkles, ArrowRight, Star, Play, Layers,
 ThumbsUp, Settings, Calendar, CheckCircle2, Copy, Send,
-Folder, Cloud, Eye, Camera, User
+Folder, Cloud, Eye, Camera, User, ExternalLink, Link2
 } from "lucide-react";
 import { PortfolioData, PortfolioWork, DesignSettings } from "./types";
 import { initialPortfolioData } from "./data";
@@ -40,17 +40,38 @@ function normalizeImageUrl(url: string): string {
   return url;
 }
 
-// ── 진짜 툴 SVG 아이콘 (Simple Icons CDN) ──
+// ── 툴 SVG 아이콘 (Simple Icons CDN) ──
 const SKILL_ICON_URLS: Record<string, string> = {
+  // Adobe
   "Figma": "https://cdn.simpleicons.org/figma",
   "Photoshop": "https://cdn.simpleicons.org/adobephotoshop",
   "Illustrator": "https://cdn.simpleicons.org/adobeillustrator",
   "Premiere Pro": "https://cdn.simpleicons.org/adobepremierepro",
   "After Effects": "https://cdn.simpleicons.org/adobeaftereffects",
+  "InDesign": "https://cdn.simpleicons.org/adobeindesign",
+  "XD": "https://cdn.simpleicons.org/adobexd",
+  "Lightroom": "https://cdn.simpleicons.org/adobelightroom",
+  // 소셜 / 마케팅
   "Meta Ads": "https://cdn.simpleicons.org/meta",
   "Instagram 운영": "https://cdn.simpleicons.org/instagram",
+  "Instagram": "https://cdn.simpleicons.org/instagram",
+  "YouTube": "https://cdn.simpleicons.org/youtube",
+  "TikTok": "https://cdn.simpleicons.org/tiktok",
+  "Facebook": "https://cdn.simpleicons.org/facebook",
+  "Twitter": "https://cdn.simpleicons.org/x",
+  "LinkedIn": "https://cdn.simpleicons.org/linkedin",
+  // 협업 / 기획
   "콘텐츠 기획": "https://cdn.simpleicons.org/notion",
+  "Notion": "https://cdn.simpleicons.org/notion",
   "sns 운영": "https://cdn.simpleicons.org/instagram",
+  "Slack": "https://cdn.simpleicons.org/slack",
+  "Jira": "https://cdn.simpleicons.org/jira",
+  "Google Analytics": "https://cdn.simpleicons.org/googleanalytics",
+  "Google Ads": "https://cdn.simpleicons.org/googleads",
+  // 기타
+  "CapCut": "https://cdn.simpleicons.org/capcut",
+  "Canva": "https://cdn.simpleicons.org/canva",
+  "ChatGPT": "https://cdn.simpleicons.org/openai",
 };
 
 // 아이콘 컴포넌트 – 이미지 로드 실패 시 fallback
@@ -98,36 +119,49 @@ return <>{text.split("\\n").map((line, i, arr) => (
 return <span className={cls}>{text}</span>;
 };
 
-// ── Supabase 설정 (환경변수로 관리) ──
-const SUPABASE_URL = (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_SUPABASE_URL) || "";
-const SUPABASE_ANON_KEY = (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_SUPABASE_ANON_KEY) || "";
+// ── Supabase 크로스 디바이스 동기화 ──
+// ① Supabase 무료 프로젝트 생성: https://supabase.com
+// ② SQL Editor에서 아래 실행:
+//    create table portfolio_data (id int primary key, data jsonb, updated_at timestamptz default now());
+//    insert into portfolio_data (id, data) values (1, '{}');
+//    alter table portfolio_data enable row level security;
+//    create policy "public read"  on portfolio_data for select using (true);
+//    create policy "public write" on portfolio_data for all    using (true);
+// ③ Settings → API 에서 URL, anon key 복사 후 아래에 붙여넣기
+const SUPABASE_URL  = (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_SUPABASE_URL)      || "https://siljvxlnrglzhfohnpjk.supabase.co";
+const SUPABASE_ANON = (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_SUPABASE_ANON_KEY) || "sb_publishable_89jX8OrdSidIAPgetXAW6A_Oi4S1YSD";
 const SUPABASE_TABLE = "portfolio_data";
 const SUPABASE_ROW_ID = 1;
 
-async function dbLoad(): Promise<PortfolioData | null> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+const DB_READY = SUPABASE_URL !== "YOUR_SUPABASE_URL" && SUPABASE_ANON !== "YOUR_SUPABASE_ANON_KEY";
+
+// updated_at 포함해서 로드 (변경 감지용)
+async function dbLoad(): Promise<{ data: PortfolioData; updated_at: string } | null> {
+  if (!DB_READY) return null;
   try {
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=eq.${SUPABASE_ROW_ID}&select=data`,
-      { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } }
+      `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=eq.${SUPABASE_ROW_ID}&select=data,updated_at`,
+      { headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` } }
     );
     const rows = await res.json();
-    return rows?.[0]?.data ?? null;
+    if (!rows?.[0]?.data) return null;
+    return { data: rows[0].data, updated_at: rows[0].updated_at ?? "" };
   } catch { return null; }
 }
 
+// upsert: 행이 없으면 insert, 있으면 update
 async function dbSave(d: PortfolioData): Promise<void> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
+  if (!DB_READY) return;
   try {
-    await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=eq.${SUPABASE_ROW_ID}`, {
-      method: "PATCH",
+    await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}`, {
+      method: "POST",
       headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        apikey: SUPABASE_ANON,
+        Authorization: `Bearer ${SUPABASE_ANON}`,
         "Content-Type": "application/json",
-        Prefer: "return=minimal",
+        Prefer: "resolution=merge-duplicates,return=minimal",
       },
-      body: JSON.stringify({ data: d }),
+      body: JSON.stringify({ id: SUPABASE_ROW_ID, data: d }),
     });
   } catch {}
 }
@@ -151,6 +185,8 @@ const [selectedCat, setSelectedCat] = useState("all");
 const [activeSection, setActiveSection] = useState("about");
 const [adminLoggedIn, setAdminLoggedIn] = useState(false);
 const [loading, setLoading] = useState(true);
+const [syncStatus, setSyncStatus] = useState<"idle"|"saving"|"saved"|"error"|"offline">("idle");
+const [lastUpdatedAt, setLastUpdatedAt] = useState<string>("");
 const adminAllowed = isAdminAllowed();
 
 useEffect(() => {
@@ -178,25 +214,26 @@ portfolio: portRef, skills: skillRef, career: careerRef, contact: contactRef,
 useReveal(aboutRef); useReveal(projRef); useReveal(procRef);
 useReveal(portRef); useReveal(skillRef); useReveal(careerRef); useReveal(contactRef);
 
-// ── 데이터 로드: Supabase 우선, 없으면 localStorage 폴백 ──
+// ── 초기 데이터 로드 ──
 useEffect(() => {
   (async () => {
     setLoading(true);
     try {
-      // 1) Supabase에서 로드 시도
       const remote = await dbLoad();
       if (remote) {
-        if (!remote.sections) remote.sections = initialPortfolioData.sections;
-        else remote.sections = { ...initialPortfolioData.sections, ...remote.sections };
-        if (!remote.design) remote.design = initialPortfolioData.design;
-        setData(remote);
-        // 로컬에도 캐시 (오프라인 대비)
-        localStorage.setItem("ysk_final_v2", JSON.stringify(remote));
+        const d = remote.data;
+        if (!d.sections) d.sections = initialPortfolioData.sections;
+        else d.sections = { ...initialPortfolioData.sections, ...d.sections };
+        if (!d.design) d.design = initialPortfolioData.design;
+        setData(d);
+        setLastUpdatedAt(remote.updated_at);
+        localStorage.setItem("ysk_final_v2", JSON.stringify(d));
+        setSyncStatus(DB_READY ? "saved" : "offline");
         setLoading(false);
         return;
       }
     } catch {}
-    // 2) Supabase 실패 시 localStorage 폴백
+    // Supabase 실패 → localStorage 폴백
     try {
       const saved = localStorage.getItem("ysk_final_v2");
       if (saved) {
@@ -207,15 +244,46 @@ useEffect(() => {
         setData(p);
       }
     } catch {}
+    setSyncStatus(DB_READY ? "error" : "offline");
     setLoading(false);
   })();
+}, []);
+
+// ── 실시간 폴링: 5초마다 다른 기기의 변경 감지 ──
+useEffect(() => {
+  if (!DB_READY) return;
+  const poll = async () => {
+    try {
+      const remote = await dbLoad();
+      if (!remote) return;
+      // updated_at이 다를 때만 state 갱신 (불필요한 리렌더 방지)
+      setLastUpdatedAt(prev => {
+        if (prev && remote.updated_at && remote.updated_at !== prev) {
+          const d = remote.data;
+          if (!d.sections) d.sections = initialPortfolioData.sections;
+          else d.sections = { ...initialPortfolioData.sections, ...d.sections };
+          if (!d.design) d.design = initialPortfolioData.design;
+          setData(d);
+          localStorage.setItem("ysk_final_v2", JSON.stringify(d));
+        }
+        return remote.updated_at ?? prev;
+      });
+    } catch {}
+  };
+  const timer = setInterval(poll, 5000);
+  return () => clearInterval(timer);
 }, []);
 
 // ── 데이터 저장: Supabase + localStorage 동시 저장 ──
 const saveData = (d: PortfolioData) => {
   setData(d);
   localStorage.setItem("ysk_final_v2", JSON.stringify(d));
-  dbSave(d); // 모든 기기에 동기화
+  setSyncStatus("saving");
+  dbSave(d).then(() => {
+    setSyncStatus("saved");
+    setLastUpdatedAt(new Date().toISOString());
+    setTimeout(() => setSyncStatus("idle"), 3000);
+  }).catch(() => setSyncStatus("error"));
 };
 
 useEffect(() => {
@@ -314,7 +382,9 @@ if (loading) return (
 <div className="min-h-screen flex items-center justify-center" style={{ background: D.bgColor }}>
 <div className="flex flex-col items-center gap-4">
 <div className="w-10 h-10 rounded-full border-4 border-t-transparent animate-spin" style={{ borderColor: primary + "30", borderTopColor: primary }} />
-<p className="text-xs font-bold" style={{ color: primary }}>Loading...</p>
+<p className="text-xs font-bold" style={{ color: primary }}>
+  {DB_READY ? "클라우드에서 데이터 로딩 중..." : "로컬 데이터 로딩 중..."}
+</p>
 </div>
 </div>
 );
@@ -359,8 +429,6 @@ sessionStorage.removeItem(key);
 setAdminOpen(true);
 }
 }}>
-<div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-lg border-2 border-white -rotate-2 group-hover:rotate-0 transition-transform font-imkwontaek"
-style={{ background: primary, boxShadow: `2px 2px 0 ${primary}aa` }}>유</div>
 <div>
 <div className="font-black text-sm tracking-tight leading-none" style={{ color: D.textColor }}>{data.profile.name} 포트폴리오</div>
 <div className="text-[9px] font-bold uppercase tracking-wider mt-0.5" style={{ color: primary }}>{data.profile.title}</div>
@@ -375,17 +443,35 @@ return (
 className="py-1.5 px-3 rounded-full transition-all duration-300 font-bold"
 style={{
 background: isActive ? primary : "transparent",
-color: isActive ? "#ffffff" : "#1e293b",
+color: "#1e293b",
 fontWeight: isActive ? 800 : 600,
 }}
-onMouseEnter={e => { if (!isActive) { (e.currentTarget as HTMLElement).style.background = primary + "15"; (e.currentTarget as HTMLElement).style.color = primary; } }}
-onMouseLeave={e => { if (!isActive) { (e.currentTarget as HTMLElement).style.background = "transparent"; (e.currentTarget as HTMLElement).style.color = "#1e293b"; } }}
+onMouseEnter={e => { if (!isActive) { (e.currentTarget as HTMLElement).style.background = primary + "15"; } }}
+onMouseLeave={e => { if (!isActive) { (e.currentTarget as HTMLElement).style.background = "transparent"; } }}
 >{label}</a>
 );
 })}
 </nav>
 
 <div className="flex items-center gap-2">
+{/* ── 동기화 상태 뱃지 ── */}
+{DB_READY && syncStatus !== "idle" && (
+  <span className="hidden sm:flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full border transition-all"
+    style={{
+      background: syncStatus==="saving" ? "#fef9c3" : syncStatus==="saved" ? "#dcfce7" : syncStatus==="error" ? "#fee2e2" : "#f1f5f9",
+      color:      syncStatus==="saving" ? "#854d0e" : syncStatus==="saved" ? "#166534" : syncStatus==="error" ? "#991b1b" : "#64748b",
+      borderColor:syncStatus==="saving" ? "#fde68a" : syncStatus==="saved" ? "#86efac" : syncStatus==="error" ? "#fca5a5" : "#e2e8f0",
+    }}>
+    {syncStatus==="saving" && <><span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse"/>저장 중...</>}
+    {syncStatus==="saved"  && <><span className="w-1.5 h-1.5 rounded-full bg-emerald-400"/>모든 기기 동기화 완료</>}
+    {syncStatus==="error"  && <><span className="w-1.5 h-1.5 rounded-full bg-red-400"/>동기화 실패</>}
+  </span>
+)}
+{!DB_READY && adminAllowed && (
+  <span className="hidden lg:flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-700">
+    <span className="w-1.5 h-1.5 rounded-full bg-amber-400"/>Supabase 미연결 (로컬 전용)
+  </span>
+)}
 {adminAllowed && (
 <button onClick={() => setAdminOpen(true)}
 className="py-1.5 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border"
@@ -691,6 +777,26 @@ return em
 <span className="text-[9px] uppercase font-mono font-black px-2 py-0.5 rounded" style={{ color: primary, background: primary+"15" }}>{selectedWork.category}</span>
 <h3 className="text-base font-black leading-snug" style={{ color: D.textColor }}>{selectedWork.title}</h3>
 <p className="text-xs font-light leading-relaxed" style={{ color: D.textColor + "88" }}>{selectedWork.description}</p>
+
+{/* ── 링크 버튼 (PPT / SNS 등) ── */}
+{selectedWork.links && selectedWork.links.length > 0 && (
+<div className="pt-3 space-y-2 border-t" style={{ borderColor: primary + "20" }}>
+<span className="text-[9px] font-black font-mono uppercase tracking-wider block" style={{ color: primary }}>// 링크</span>
+{selectedWork.links.map((lnk, li) => {
+const iconMap: Record<string, string> = {
+ppt: "📊", instagram: "📱", youtube: "▶", behance: "🅱", figma: "🎨", other: "🔗"
+};
+return (
+<a key={li} href={lnk.url} target="_blank" rel="noopener noreferrer"
+className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border w-full transition-all hover:scale-[1.02]"
+style={{ background: primary+"10", borderColor: primary+"30", color: primary }}>
+<ExternalLink className="w-3 h-3 shrink-0" />
+<span className="truncate">{lnk.label || lnk.type}</span>
+</a>
+);
+})}
+</div>
+)}
 </div>
 <p className="text-[9px] font-mono uppercase tracking-wider pt-6 border-t text-center" style={{ color: primary + "66", borderColor: primary + "20" }}>YOO SU-KYUNG CREATIVE PORTFOLIO</p>
 </div>
@@ -736,7 +842,7 @@ if (secId === "skills") return (
 </div>
 </div>
 
-{/* ── 핵심 실무 협업 도구 섹션 삭제됨 ── */}
+{/* ── Why Me ── */}
 
 <div className="mt-5 card p-8 text-left reveal" style={{ background: D.cardBgColor }}>
 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
