@@ -518,6 +518,34 @@ export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
                       </div>
                     </div>
                   )}
+                  {/* ── 외부 링크 (PPT / SNS 등) ── */}
+                  <div>
+                    <label className={lbl}>🔗 외부 링크 (PPT / SNS / Figma 등)</label>
+                    <div className="space-y-2">
+                      {(w.links||[]).map((lnk,li)=>(
+                        <div key={li} className="flex gap-2 items-center">
+                          <select className={inp+" w-28 shrink-0 text-xs cursor-pointer"} value={lnk.type}
+                            onChange={e=>{const a=[...(draft.portfolioWorks||[])];const ls=[...(a[i].links||[])];ls[li]={...ls[li],type:e.target.value as any};a[i]={...a[i],links:ls};setDraft({...draft,portfolioWorks:a});}}>
+                            <option value="ppt">📊 PPT</option>
+                            <option value="instagram">📱 Instagram</option>
+                            <option value="youtube">▶ YouTube</option>
+                            <option value="behance">🅱 Behance</option>
+                            <option value="figma">🎨 Figma</option>
+                            <option value="other">🔗 기타</option>
+                          </select>
+                          <input className={inp+" flex-1"} placeholder="버튼 텍스트 (예: PPT 보기)" value={lnk.label}
+                            onChange={e=>{const a=[...(draft.portfolioWorks||[])];const ls=[...(a[i].links||[])];ls[li]={...ls[li],label:e.target.value};a[i]={...a[i],links:ls};setDraft({...draft,portfolioWorks:a});}}/>
+                          <input className={inp+" flex-1"} placeholder="https://..." value={lnk.url}
+                            onChange={e=>{const a=[...(draft.portfolioWorks||[])];const ls=[...(a[i].links||[])];ls[li]={...ls[li],url:e.target.value};a[i]={...a[i],links:ls};setDraft({...draft,portfolioWorks:a});}}/>
+                          <button onClick={()=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],links:(a[i].links||[]).filter((_,idx)=>idx!==li)};setDraft({...draft,portfolioWorks:a});}} className="text-red-400 shrink-0 font-bold">✕</button>
+                        </div>
+                      ))}
+                      <button onClick={()=>{const a=[...(draft.portfolioWorks||[])];a[i]={...a[i],links:[...(a[i].links||[]),{label:"",url:"",type:"other" as const}]};setDraft({...draft,portfolioWorks:a});}}
+                        className="text-xs font-bold px-3 py-1.5 rounded-lg border border-sky-200 text-sky-600 bg-sky-50 hover:bg-sky-100 transition-colors cursor-pointer">
+                        + 링크 추가
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
