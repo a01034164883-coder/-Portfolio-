@@ -7,7 +7,7 @@ Folder, Cloud, Eye, Camera, User, ExternalLink, Link2
 } from "lucide-react";
 import { PortfolioData, PortfolioWork, DesignSettings } from "./types";
 import { initialPortfolioData } from "./data";
-import AdminPanel from "./components/AdminPanel";
+import AdminPanel from "./AdminPanel";
 
 function useReveal(ref: React.RefObject<HTMLElement | null>) {
 useEffect(() => {
