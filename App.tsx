@@ -145,8 +145,9 @@ async function dbLoad(): Promise<{ data: PortfolioData; updated_at: string } | n
       { headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` } }
     );
     const rows = await res.json();
-    if (!rows?.[0]?.data) return null;
-    return { data: rows[0].data, updated_at: rows[0].updated_at ?? "" };
+    const d = rows[0].data;
+if (!d || !d.profile) return null;
+return { data: d, updated_at: rows[0].updated_at ?? "" };
   } catch { return null; }
 }
 
