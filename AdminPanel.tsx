@@ -5,7 +5,7 @@ import {
   Wand2, Upload, CheckCircle2, Monitor, Smartphone
 } from "lucide-react";
 import { motion } from "motion/react";
-import { PortfolioData, SectionHeaders, DesignSettings } from "../types";
+import { PortfolioData, SectionHeaders, DesignSettings } from "./types";
 import { initialPortfolioData } from "./data";
 
 // ── 이미지 압축 ──
