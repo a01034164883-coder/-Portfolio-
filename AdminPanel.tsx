@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { PortfolioData, SectionHeaders, DesignSettings } from "../types";
-import { initialPortfolioData } from "../data";
+import { initialPortfolioData } from "./data";
 
 // ── 이미지 압축 ──
 const compress = (file: File, mW: number, mH: number, cb: (b: string) => void) => {
