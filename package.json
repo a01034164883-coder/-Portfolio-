@@ -2,7 +2,6 @@
   "name": "ysk-portfolio-final",
   "private": true,
   "version": "5.0.0",
-  "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
@@ -21,7 +20,9 @@
     "@types/node": "^22.14.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "tailwindcss": "^4.1.14",
+    "autoprefixer": "^10.5.0",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^3.4.1",
     "typescript": "~5.8.2"
   }
 }
