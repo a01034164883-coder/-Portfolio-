@@ -343,8 +343,9 @@ const handleScroll = () => {
     const weightMap: Record<string,string> = {
       normal:"400",medium:"500",semibold:"600",bold:"700",black:"900"
     };
-    const fontSize = hs.fontSize ? sizeMap[hs.fontSize] : undefined;
+ const fontSize = hs.fontSize ? sizeMap[hs.fontSize] : undefined;
     const fontWeight = hs.fontWeight ? weightMap[hs.fontWeight] : undefined;
+    const lineBreak = hs.lineBreak;
     const lines = text.split("\\n");
     return lines.map((line, li) => {
       const parts = line.split(/(유수경|유수|流水)/g);
@@ -357,7 +358,7 @@ const handleScroll = () => {
               return <span key={i} style={{ fontFamily: "'Ma Shan Zheng', cursive", color: primary, ...(fontSize ? {fontSize} : {}) }}>{part}</span>;
             return <span key={i} style={{ fontFamily: "'Pretendard', sans-serif", ...(fontSize ? {fontSize} : {}), ...(fontWeight ? {fontWeight} : {}) }}>{part}</span>;
           })}
-          {li < lines.length - 1 && <br />}
+         {(li < lines.length - 1 || lineBreak) && <br />}
         </span>
       );
     });
