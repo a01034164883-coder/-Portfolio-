@@ -152,7 +152,7 @@ export default function App() {
   const [scrolled, setScrolled] = useState(false);
   const [selectedWork, setSelectedWork] = useState<PortfolioWork | null>(null);
   const [selectedCat, setSelectedCat] = useState("all");
-const [activeSection, setActiveSection] = useState("");
+const [activeSection, setActiveSection] = useState<string | null>(null);
   const [adminLoggedIn, setAdminLoggedIn] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<"idle"|"saving"|"saved"|"error"|"offline">("idle");
@@ -407,7 +407,7 @@ const [activeSection, setActiveSection] = useState("");
           {/* 데스크탑 네비 */}
           <nav className="hidden lg:flex items-center gap-1 text-xs font-bold">
             {navItems.map(([href, id, label]) => {
-              const isActive = activeSection === id;
+              const isActive = activeSection !== null && activeSection === id;
               return (
                 <a
                   key={href}
