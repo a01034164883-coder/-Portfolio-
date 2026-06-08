@@ -379,21 +379,21 @@ export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
     setDraft(d);
   };
 
-  const tabs: {id:Tab;label:string}[] = [
-    {id:"bulk",label:"🔗 URL로 추가"},
-    {id:"portfolio",label:"📂 포트폴리오"},
-    {id:"design",label:"🎨 디자인"},
-    {id:"sections",label:"📝 섹션 텍스트"},
-    {id:"profile",label:"👤 프로필"},
-    {id:"stats",label:"📊 통계"},
-    {id:"strengths",label:"💪 강점"},
-    {id:"projects",label:"📁 케이스"},
-    {id:"process",label:"⚙️ 프로세스"},
-    {id:"skills",label:"🛠️ 스킬"},
-    {id:"career",label:"🏢 경력"},
-    {id:"whyme",label:"✨ Why Me"},
-    {id:"contact",label:"📞 연락처"},
-    {id:"tools",label:"🔧 도구"},
+const tabs: {id:Tab;label:string}[] = [
+    {id:"profile",    label:"👤 프로필"},
+    {id:"sections",   label:"📝 섹션 텍스트"},
+    {id:"design",     label:"🎨 디자인"},
+    {id:"portfolio",  label:"📂 포트폴리오"},
+    {id:"bulk",       label:"🔗 URL로 추가"},
+    {id:"stats",      label:"📊 통계"},
+    {id:"strengths",  label:"💪 강점"},
+    {id:"projects",   label:"📁 케이스"},
+    {id:"process",    label:"⚙️ 프로세스"},
+    {id:"skills",     label:"🛠️ 스킬"},
+    {id:"career",     label:"🏢 경력"},
+    {id:"whyme",      label:"✨ Why Me"},
+    {id:"contact",    label:"📞 연락처"},
+    {id:"tools",      label:"🔧 도구"},
   ];
 
   if (!auth) return (
@@ -622,7 +622,22 @@ export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
                       className={`px-4 py-2 rounded-lg text-xs font-bold border ${D.globalFontSize===v?"bg-sky-500 text-white border-sky-600":"bg-white text-slate-600 border-slate-200"}`}>{l}</button>
                   ))}
                 </div>
-                <p className="text-[10px] text-slate-400">※ 섹션별 개별 크기는 📝 섹션 텍스트 탭에서 조절</p>
+               <p className="text-[10px] text-slate-400">※ 섹션별 개별 크기는 📝 섹션 텍스트 탭에서 조절</p>
+              </div>
+
+              <div className="bg-slate-50 border border-sky-100 rounded-2xl p-5 space-y-4">
+                <p className="text-xs font-black text-slate-700">🔤 Pretendard 단계별 스타일</p>
+                <p className="text-[10px] text-slate-400">대제목 / 소제목 / 본문 / 캡션 각각 크기·굵기 조절</p>
+                {([
+                  ["fontH1","대제목(H1)"],
+                  ["fontH2","소제목(H2)"],
+                  ["fontBody","본문"],
+                  ["fontCaption","캡션/설명"],
+                ] as const).map(([k,label])=>(
+                  <TextStyleControls key={k} label={label}
+                    value={(D as any)[k]}
+                    onChange={v=>upDesign(k as any, v)}/>
+                ))}
               </div>
 
               {/* 섹션 순서/보이기 */}
@@ -704,13 +719,17 @@ export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
                 <label className={lbl}>헤드라인 <span className="text-sky-400 normal-case font-normal">(Enter = 줄바꿈)</span></label>
                 <textarea rows={3} className={inp+" resize-none"}
                   value={fromStored(draft.profile.headline||"")}
-                  onChange={e=>setDraft({...draft,profile:{...draft.profile,headline:toStored(e.target.value)}})}/>
+            onChange={e=>setDraft({...draft,profile:{...draft.profile,headline:toStored(e.target.value)}})}/>
+                <TextStyleControls label="헤드라인" value={(draft.profile as any).headlineStyle}
+                  onChange={v=>setDraft({...draft,profile:{...draft.profile,headlineStyle:v}})}/>
               </div>
               <div>
                 <label className={lbl}>서브 헤드라인 <span className="text-sky-400 normal-case font-normal">(Enter = 줄바꿈)</span></label>
                 <textarea rows={4} className={inp+" resize-none"}
                   value={fromStored(draft.profile.subHeadline||"")}
-                  onChange={e=>setDraft({...draft,profile:{...draft.profile,subHeadline:toStored(e.target.value)}})}/>
+                 onChange={e=>setDraft({...draft,profile:{...draft.profile,subHeadline:toStored(e.target.value)}})}/>
+                <TextStyleControls label="서브헤드라인" value={(draft.profile as any).subHeadlineStyle}
+                  onChange={v=>setDraft({...draft,profile:{...draft.profile,subHeadlineStyle:v}})}/>
               </div>
               <div>
                 <label className={lbl}>프로필 사진</label>
