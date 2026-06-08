@@ -334,7 +334,17 @@ const handleScroll = () => {
   };
 
   // 헤드라인 렌더링: 유수경/유수 → KCCHyerim, 流水 → Ma Shan Zheng, 나머지 → Pretendard
-  const renderHeadline = (text: string) => {
+ const renderHeadline = (text: string) => {
+    const hs = (draft?.profile as any)?.headlineStyle || (data.profile as any)?.headlineStyle || {};
+    const sizeMap: Record<string,string> = {
+      xs:"0.75rem",sm:"0.875rem",base:"1rem",lg:"1.125rem",xl:"1.25rem",
+      "2xl":"1.5rem","3xl":"1.875rem","4xl":"2.25rem","5xl":"3rem","6xl":"3.75rem"
+    };
+    const weightMap: Record<string,string> = {
+      normal:"400",medium:"500",semibold:"600",bold:"700",black:"900"
+    };
+    const fontSize = hs.fontSize ? sizeMap[hs.fontSize] : undefined;
+    const fontWeight = hs.fontWeight ? weightMap[hs.fontWeight] : undefined;
     const lines = text.split("\\n");
     return lines.map((line, li) => {
       const parts = line.split(/(유수경|유수|流水)/g);
@@ -342,10 +352,10 @@ const handleScroll = () => {
         <span key={li}>
           {parts.map((part, i) => {
             if (part === "유수경" || part === "유수")
-              return <span key={i} style={{ fontFamily: "'KCCHyerim', cursive", color: primary }}>{part}</span>;
+              return <span key={i} style={{ fontFamily: "'KCCHyerim', cursive", color: primary, ...(fontSize ? {fontSize} : {}) }}>{part}</span>;
             if (part === "流水")
-              return <span key={i} style={{ fontFamily: "'Ma Shan Zheng', cursive", color: primary }}>{part}</span>;
-            return <span key={i} style={{ fontFamily: "'Pretendard', sans-serif" }}>{part}</span>;
+              return <span key={i} style={{ fontFamily: "'Ma Shan Zheng', cursive", color: primary, ...(fontSize ? {fontSize} : {}) }}>{part}</span>;
+            return <span key={i} style={{ fontFamily: "'Pretendard', sans-serif", ...(fontSize ? {fontSize} : {}), ...(fontWeight ? {fontWeight} : {}) }}>{part}</span>;
           })}
           {li < lines.length - 1 && <br />}
         </span>
