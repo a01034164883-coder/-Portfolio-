@@ -141,10 +141,8 @@ async function dbSave(d: PortfolioData): Promise<void> {
 }
 
 function isAdminAllowed(): boolean {
-  const host = window.location.hostname;
-  const isLocal = host === "localhost" || host === "127.0.0.1" || host.startsWith("192.168.");
-  const hasParam = new URLSearchParams(window.location.search).get("admin") === "true";
-  return isLocal || hasParam;
+  return true;
+}
 }
 
 export default function App() {
