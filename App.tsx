@@ -335,7 +335,7 @@ const handleScroll = () => {
 
   // 헤드라인 렌더링: 유수경/유수 → KCCHyerim, 流水 → Ma Shan Zheng, 나머지 → Pretendard
  const renderHeadline = (text: string) => {
-    const hs = (draft?.profile as any)?.headlineStyle || (data.profile as any)?.headlineStyle || {};
+   const hs = (data.profile as any)?.headlineStyle || {};
     const sizeMap: Record<string,string> = {
       xs:"0.75rem",sm:"0.875rem",base:"1rem",lg:"1.125rem",xl:"1.25rem",
       "2xl":"1.5rem","3xl":"1.875rem","4xl":"2.25rem","5xl":"3rem","6xl":"3.75rem"
