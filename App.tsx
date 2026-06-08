@@ -257,9 +257,9 @@ const [activeSection, setActiveSection] = useState<string | null>(null);
   }, []);
 
   useEffect(() => {
-    const handleScroll = () => {
+const handleScroll = () => {
       const scrollY = window.scrollY + window.innerHeight * 0.25;
-      let current = "about";
+      let current = "";
       for (const [id, ref] of Object.entries(sectionRefMap)) {
         const el = ref.current;
         if (!el) continue;
