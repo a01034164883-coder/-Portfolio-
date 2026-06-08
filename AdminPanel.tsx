@@ -200,7 +200,6 @@ ${urls.map((u, i) => `${i + 1}. ${u}`).join("\n")}
       }));
       setRows(prev => [...prev.filter(r => r.url), ...newRows]);
     } catch (e) {
-      // AI 실패시 기본값으로 행 생성
       const newRows = urls.map(url => ({
         id: `r-${Date.now()}-${Math.random()}`,
         url, thumbUrl: "",
@@ -363,130 +362,6 @@ ${urls.map((u, i) => `${i + 1}. ${u}`).join("\n")}
   );
 }
 
-  const handlePasteMultiple = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const text = e.clipboardData.getData("text");
-    const urls = text.split(/\n/).map(l => l.trim()).filter(Boolean);
-    if (urls.length > 1) {
-      e.preventDefault();
-      const newRows = urls.map(url => ({
-        id: `r-${Date.now()}-${Math.random()}`,
-        url, thumbUrl: "",
-        title: url.split("/").pop()?.replace(/[?#].*$/, "").replace(/\.[^.]+$/, "") || "작품",
-        category: KNOWN_CATEGORIES[0],
-        workType: (url.includes("youtube.com") || url.includes("youtu.be") || !!url.match(/\.(mp4|mov)$/i)) ? "video" as const : "image" as const,
-        desc: "",
-      }));
-      setRows(prev => [...prev.filter(r => r.url), ...newRows]);
-    }
-  };
-
-  const applyGlobalCat = () => { if (globalCat) setRows(prev => prev.map(r => ({ ...r, category: globalCat }))); };
-
-  const addAll = () => {
-    const valid = rows.filter(r => r.url.trim());
-    if (!valid.length) return;
-    const newWorks = valid.map(r => ({
-      id: r.id,
-      title: r.title || "작품",
-      category: r.category,
-      description: r.desc || `${r.category} 포트폴리오`,
-      imageUrl: r.workType === "image" ? normalizeImageUrl(r.url) : normalizeImageUrl(r.thumbUrl),
-      workType: r.workType,
-      videoUrl: r.workType === "video" ? r.url : undefined,
-    }));
-    setDraft({ ...draft, portfolioWorks: [...(draft.portfolioWorks || []), ...newWorks] });
-    setDone(true);
-  };
-
-  const inp = "w-full p-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:border-sky-400 focus:outline-none";
-  const lbl = "block text-[9px] text-slate-400 mb-0.5 uppercase tracking-wider font-bold";
-
-  return (
-    <div className="space-y-5 max-w-4xl">
-      <div className="flex items-center gap-2 border-b border-sky-100 pb-2">
-        <Link2 className="w-4 h-4 text-sky-500" />
-        <h3 className="text-sky-600 font-black text-sm">URL 링크로 일괄 추가</h3>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        {URL_GUIDE.map(g => (
-          <div key={g.name} className="bg-sky-50 border border-sky-100 rounded-xl p-3 space-y-1">
-            <p className="text-xs font-black text-slate-700">{g.icon} {g.name}</p>
-            <p className="text-[10px] text-slate-500">{g.hint}</p>
-            <p className="text-[9px] text-slate-400 font-mono truncate">{g.example}</p>
-          </div>
-        ))}
-      </div>
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-        <p className="text-xs font-black text-amber-700 mb-1">⚡ 여러 URL 한번에 붙여넣기</p>
-        <p className="text-[10px] text-amber-600">URL들을 줄바꿈으로 구분해서 첫 번째 칸에 붙여넣으면 자동으로 여러 행 생성</p>
-      </div>
-      <div className="flex gap-2 items-center bg-slate-50 border border-sky-100 rounded-xl p-3">
-        <Wand2 className="w-4 h-4 text-sky-500 shrink-0" />
-        <span className="text-xs font-bold text-slate-700 shrink-0">전체 카테고리:</span>
-        <select className={inp + " flex-1"} value={globalCat} onChange={e => setGlobalCat(e.target.value)}>
-          <option value="">선택...</option>
-          {KNOWN_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <button onClick={applyGlobalCat} className="shrink-0 px-3 py-1.5 bg-sky-500 text-white text-xs font-black rounded-lg">적용</button>
-      </div>
-      <div className="space-y-3">
-        <div className="flex justify-between items-center">
-          <span className="text-xs font-bold text-slate-600">총 {rows.length}개</span>
-          <button onClick={addRow} className="flex items-center gap-1 px-3 py-1.5 bg-sky-50 text-sky-600 text-xs rounded-lg border border-sky-200 font-bold"><Plus className="w-3 h-3" />행 추가</button>
-        </div>
-        {rows.map((row, idx) => (
-          <div key={row.id} className="bg-white border border-sky-100 rounded-xl p-3 space-y-2">
-            <div className="grid gap-2 items-start" style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr 28px" }}>
-              <div>
-                <label className={lbl}>URL</label>
-                <textarea rows={2} className={inp + " resize-none"} placeholder="https://drive.google.com/... 또는 https://youtu.be/..."
-                  value={row.url} onChange={e => handleUrlChange(row.id, e.target.value)}
-                  onPaste={idx === 0 ? handlePasteMultiple : undefined} />
-                {row.url && <span className="text-[9px] mt-0.5 block font-bold text-sky-500">🔗 {detectPlatform(row.url)}</span>}
-              </div>
-              <div><label className={lbl}>제목</label><input className={inp} placeholder="작품 제목" value={row.title} onChange={e => updateRow(row.id, { title: e.target.value })} /></div>
-              <div><label className={lbl}>카테고리</label>
-                <select className={inp} value={row.category} onChange={e => updateRow(row.id, { category: e.target.value })}>
-                  {KNOWN_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  <option value="기타">기타</option>
-                </select>
-              </div>
-              <div><label className={lbl}>타입</label>
-                <select className={inp} value={row.workType} onChange={e => updateRow(row.id, { workType: e.target.value as "image"|"video" })}>
-                  <option value="image">🖼️ 이미지</option>
-                  <option value="video">▶️ 영상</option>
-                </select>
-              </div>
-              <button onClick={() => removeRow(row.id)} className="mt-4 text-slate-300 hover:text-red-400"><X className="w-4 h-4" /></button>
-            </div>
-            {row.workType === "video" && (
-              <div><label className={lbl}>썸네일 이미지 URL (선택)</label>
-                <input className={inp} placeholder="https://..." value={row.thumbUrl} onChange={e => updateRow(row.id, { thumbUrl: e.target.value })} />
-              </div>
-            )}
-            <div><label className={lbl}>설명 (선택)</label>
-              <input className={inp} placeholder="간단한 설명..." value={row.desc} onChange={e => updateRow(row.id, { desc: e.target.value })} />
-            </div>
-          </div>
-        ))}
-      </div>
-      {!done ? (
-        <button onClick={addAll} className="w-full py-3 rounded-xl font-black text-white text-sm hover:opacity-90" style={{ background: "#0ea5e9" }}>
-          ✨ {rows.filter(r => r.url.trim()).length}개 포트폴리오에 추가하기
-        </button>
-      ) : (
-        <div className="text-center space-y-3 py-4">
-          <div className="flex items-center justify-center gap-2 text-emerald-600">
-            <CheckCircle2 className="w-5 h-5" /><p className="font-black text-sm">추가 완료! 저장 버튼을 눌러 반영하세요.</p>
-          </div>
-          <button onClick={() => { setRows([{ id: `r-${Date.now()}`, url: "", thumbUrl: "", title: "", category: KNOWN_CATEGORIES[0], workType: "image", desc: "" }]); setDone(false); }}
-            className="px-4 py-2 bg-sky-50 border border-sky-200 text-sky-600 rounded-xl text-xs font-bold">+ 더 추가하기</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ══ 디자인 미리보기 패널 ══
 function DesignPreview({ D }: { D: DesignSettings & { primaryColor: string } }) {
   const p = D.primaryColor;
@@ -508,7 +383,6 @@ function DesignPreview({ D }: { D: DesignSettings & { primaryColor: string } }) 
           </div>
           <span className="text-[7px] px-2 py-0.5 rounded font-black text-white" style={{ background: D.btnPrimaryColor }}>{D.btnPrimaryLabel||"버튼"}</span>
         </div>
-        {/* 진행바 */}
         <div className="h-0.5 w-full" style={{ background: p+"20" }}>
           <div className="h-full w-1/3 rounded-full" style={{ background: p }} />
         </div>
@@ -585,7 +459,6 @@ export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
   const inp = "w-full p-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:border-sky-400 focus:outline-none";
   const lbl = "block text-[10px] text-slate-500 mb-1 uppercase tracking-wider font-bold";
 
-  // 섹션 업데이트 헬퍼
   const upSection = (sec: keyof SectionHeaders, key: string, val: any) => {
     const d = JSON.parse(JSON.stringify(draft));
     if (!d.sections) d.sections = JSON.parse(JSON.stringify(initialPortfolioData.sections));
@@ -593,7 +466,7 @@ export default function AdminPanel({ data, onSave, onClose, onLogin }: Props) {
     setDraft(d);
   };
 
-const tabs: {id:Tab;label:string}[] = [
+  const tabs: {id:Tab;label:string}[] = [
     {id:"profile",    label:"👤 프로필"},
     {id:"sections",   label:"📝 섹션 텍스트"},
     {id:"design",     label:"🎨 디자인"},
@@ -732,7 +605,6 @@ const tabs: {id:Tab;label:string}[] = [
                       </div>
                     </div>
                   )}
-                  {/* ── 외부 링크 (PPT / SNS 등) ── */}
                   <div>
                     <label className={lbl}>🔗 외부 링크 (PPT / SNS / Figma 등)</label>
                     <div className="space-y-2">
@@ -770,7 +642,6 @@ const tabs: {id:Tab;label:string}[] = [
             <div className="space-y-6 max-w-2xl">
               <h3 className="text-sky-600 font-black text-sm border-b border-sky-100 pb-2 flex items-center gap-2"><Palette className="w-4 h-4"/>디자인 설정</h3>
 
-              {/* 색상 */}
               <div className="bg-slate-50 border border-sky-100 rounded-2xl p-5 space-y-4">
                 <p className="text-xs font-black text-slate-700">🎨 색상</p>
                 <div className="grid grid-cols-2 gap-4">
@@ -792,7 +663,6 @@ const tabs: {id:Tab;label:string}[] = [
                 </div>
               </div>
 
-              {/* 버튼 텍스트 */}
               <div className="bg-slate-50 border border-sky-100 rounded-2xl p-5 space-y-3">
                 <p className="text-xs font-black text-slate-700">🔘 버튼 라벨</p>
                 <div className="grid grid-cols-2 gap-3">
@@ -805,7 +675,6 @@ const tabs: {id:Tab;label:string}[] = [
                 </div>
               </div>
 
-              {/* 배경 */}
               <div className="bg-slate-50 border border-sky-100 rounded-2xl p-5 space-y-3">
                 <p className="text-xs font-black text-slate-700">🖼️ 배경 스타일</p>
                 <div className="flex gap-3">
@@ -827,7 +696,6 @@ const tabs: {id:Tab;label:string}[] = [
                 )}
               </div>
 
-              {/* 전체 폰트 크기 */}
               <div className="bg-slate-50 border border-sky-100 rounded-2xl p-5 space-y-3">
                 <p className="text-xs font-black text-slate-700">🔤 전체 기본 폰트 크기</p>
                 <div className="flex gap-3">
@@ -836,7 +704,7 @@ const tabs: {id:Tab;label:string}[] = [
                       className={`px-4 py-2 rounded-lg text-xs font-bold border ${D.globalFontSize===v?"bg-sky-500 text-white border-sky-600":"bg-white text-slate-600 border-slate-200"}`}>{l}</button>
                   ))}
                 </div>
-               <p className="text-[10px] text-slate-400">※ 섹션별 개별 크기는 📝 섹션 텍스트 탭에서 조절</p>
+                <p className="text-[10px] text-slate-400">※ 섹션별 개별 크기는 📝 섹션 텍스트 탭에서 조절</p>
               </div>
 
               <div className="bg-slate-50 border border-sky-100 rounded-2xl p-5 space-y-4">
@@ -854,7 +722,6 @@ const tabs: {id:Tab;label:string}[] = [
                 ))}
               </div>
 
-              {/* 섹션 순서/보이기 */}
               <div className="bg-slate-50 border border-sky-100 rounded-2xl p-5 space-y-3">
                 <p className="text-xs font-black text-slate-700">📋 섹션 순서 & 보이기/숨기기</p>
                 <div className="space-y-2">
@@ -933,7 +800,7 @@ const tabs: {id:Tab;label:string}[] = [
                 <label className={lbl}>헤드라인 <span className="text-sky-400 normal-case font-normal">(Enter = 줄바꿈)</span></label>
                 <textarea rows={3} className={inp+" resize-none"}
                   value={fromStored(draft.profile.headline||"")}
-            onChange={e=>setDraft({...draft,profile:{...draft.profile,headline:toStored(e.target.value)}})}/>
+                  onChange={e=>setDraft({...draft,profile:{...draft.profile,headline:toStored(e.target.value)}})}/>
                 <TextStyleControls label="헤드라인" value={(draft.profile as any).headlineStyle}
                   onChange={v=>setDraft({...draft,profile:{...draft.profile,headlineStyle:v}})}/>
               </div>
@@ -941,7 +808,7 @@ const tabs: {id:Tab;label:string}[] = [
                 <label className={lbl}>서브 헤드라인 <span className="text-sky-400 normal-case font-normal">(Enter = 줄바꿈)</span></label>
                 <textarea rows={4} className={inp+" resize-none"}
                   value={fromStored(draft.profile.subHeadline||"")}
-                 onChange={e=>setDraft({...draft,profile:{...draft.profile,subHeadline:toStored(e.target.value)}})}/>
+                  onChange={e=>setDraft({...draft,profile:{...draft.profile,subHeadline:toStored(e.target.value)}})}/>
                 <TextStyleControls label="서브헤드라인" value={(draft.profile as any).subHeadlineStyle}
                   onChange={v=>setDraft({...draft,profile:{...draft.profile,subHeadlineStyle:v}})}/>
               </div>
