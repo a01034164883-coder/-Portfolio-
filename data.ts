@@ -100,7 +100,6 @@ export const initialPortfolioData: PortfolioData = {
     { id: "sk3", category: "Design", name: "Illustrator", rating: 3 },
     { id: "sk4", category: "Video", name: "Premiere Pro", rating: 5 },
     { id: "sk5", category: "Video", name: "After Effects", rating: 4 },
-    { id: "sk6", category: "Marketing", name: "Meta Ads", rating: 4 },
     { id: "sk7", category: "Marketing", name: "Instagram 운영", rating: 5 },
     { id: "sk8", category: "Marketing", name: "콘텐츠 기획", rating: 5 }
   ],
