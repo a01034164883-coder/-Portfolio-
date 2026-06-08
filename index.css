@@ -9,14 +9,6 @@
   font-display: swap;
 }
 
-@theme {
-  --font-sans: "Pretendard", -apple-system, BlinkMacSystemFont, sans-serif;
-}
-
-@utility font-imkwontaek {
-  font-family: "KccImKwonTaek", cursive, sans-serif;
-}
-
 @layer base {
   html, body {
     background-color: #ffffff;
