@@ -155,7 +155,7 @@ export default function App() {
   const [scrolled, setScrolled] = useState(false);
   const [selectedWork, setSelectedWork] = useState<PortfolioWork | null>(null);
   const [selectedCat, setSelectedCat] = useState("all");
-  const [activeSection, setActiveSection] = useState("about");
+const [activeSection, setActiveSection] = useState("");
   const [adminLoggedIn, setAdminLoggedIn] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<"idle"|"saving"|"saved"|"error"|"offline">("idle");
