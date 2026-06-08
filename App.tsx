@@ -143,7 +143,6 @@ async function dbSave(d: PortfolioData): Promise<void> {
 function isAdminAllowed(): boolean {
   return true;
 }
-}
 
 export default function App() {
   const [data, setData] = useState<PortfolioData>(() => initialPortfolioData);
