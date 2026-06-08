@@ -139,6 +139,8 @@ function BulkUrlTab({ draft, setDraft }: { draft: PortfolioData; setDraft: (d: P
   ]);
   const [done, setDone] = useState(false);
   const [globalCat, setGlobalCat] = useState("");
+  const [analyzing, setAnalyzing] = useState(false);
+  const [bulkText, setBulkText] = useState("");
 
   const addRow = () => setRows(prev => [...prev, { id: `r-${Date.now()}-${Math.random()}`, url: "", thumbUrl: "", title: "", category: KNOWN_CATEGORIES[0], workType: "image", desc: "" }]);
   const removeRow = (id: string) => setRows(prev => prev.filter(r => r.id !== id));
@@ -148,6 +150,218 @@ function BulkUrlTab({ draft, setDraft }: { draft: PortfolioData; setDraft: (d: P
     const isVideo = url.includes("youtube.com") || url.includes("youtu.be") || url.includes("vimeo.com") || !!url.match(/\.(mp4|mov|webm)(\?|$)/i);
     updateRow(id, { url, workType: isVideo ? "video" : "image" });
   };
+
+  const applyGlobalCat = () => { if (globalCat) setRows(prev => prev.map(r => ({ ...r, category: globalCat }))); };
+
+  const analyzeWithAI = async (urls: string[]) => {
+    setAnalyzing(true);
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [{
+            role: "user",
+            content: `다음 URL 목록을 분석해서 각각의 정보를 JSON 배열로만 반환해줘. 다른 텍스트 없이 JSON만.
+
+카테고리는 반드시 이 5개 중 하나: 에고랩스, 스튜디오 피엘, 청년철거, 모빌리티커넥트, 채인컴퍼니
+타입은 youtube/youtu.be/vimeo/.mp4/.mov면 "video", 나머지는 "image"
+
+URL 목록:
+${urls.map((u, i) => `${i + 1}. ${u}`).join("\n")}
+
+반환 형식:
+[
+  {
+    "url": "원본URL",
+    "title": "추론한 작품 제목 (URL 경로 기반, 한국어로)",
+    "category": "5개 중 하나 (URL에 힌트 없으면 에고랩스)",
+    "workType": "image 또는 video",
+    "desc": "한 줄 설명"
+  }
+]`
+          }]
+        })
+      });
+      const data = await response.json();
+      const text = data.content?.[0]?.text || "[]";
+      const clean = text.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(clean);
+      const newRows = parsed.map((item: any) => ({
+        id: `r-${Date.now()}-${Math.random()}`,
+        url: item.url || "",
+        thumbUrl: "",
+        title: item.title || "작품",
+        category: KNOWN_CATEGORIES.includes(item.category) ? item.category : KNOWN_CATEGORIES[0],
+        workType: item.workType === "video" ? "video" as const : "image" as const,
+        desc: item.desc || "",
+      }));
+      setRows(prev => [...prev.filter(r => r.url), ...newRows]);
+    } catch (e) {
+      // AI 실패시 기본값으로 행 생성
+      const newRows = urls.map(url => ({
+        id: `r-${Date.now()}-${Math.random()}`,
+        url, thumbUrl: "",
+        title: url.split("/").pop()?.replace(/[?#].*$/, "").replace(/\.[^.]+$/, "") || "작품",
+        category: KNOWN_CATEGORIES[0],
+        workType: (url.includes("youtube.com") || url.includes("youtu.be") || !!url.match(/\.(mp4|mov)$/i)) ? "video" as const : "image" as const,
+        desc: "",
+      }));
+      setRows(prev => [...prev.filter(r => r.url), ...newRows]);
+    } finally {
+      setAnalyzing(false);
+      setBulkText("");
+    }
+  };
+
+  const handleBulkPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const text = e.clipboardData.getData("text");
+    const urls = text.split(/\n/).map(l => l.trim()).filter(Boolean);
+    if (urls.length >= 1) {
+      e.preventDefault();
+      setBulkText(text);
+      analyzeWithAI(urls);
+    }
+  };
+
+  const handleBulkSubmit = () => {
+    const urls = bulkText.split(/\n/).map(l => l.trim()).filter(Boolean);
+    if (urls.length) analyzeWithAI(urls);
+  };
+
+  const addAll = () => {
+    const valid = rows.filter(r => r.url.trim());
+    if (!valid.length) return;
+    const newWorks = valid.map(r => ({
+      id: r.id,
+      title: r.title || "작품",
+      category: r.category,
+      description: r.desc || `${r.category} 포트폴리오`,
+      imageUrl: r.workType === "image" ? normalizeImageUrl(r.url) : normalizeImageUrl(r.thumbUrl),
+      workType: r.workType,
+      videoUrl: r.workType === "video" ? r.url : undefined,
+    }));
+    setDraft({ ...draft, portfolioWorks: [...(draft.portfolioWorks || []), ...newWorks] });
+    setDone(true);
+  };
+
+  const inp = "w-full p-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:border-sky-400 focus:outline-none";
+  const lbl = "block text-[9px] text-slate-400 mb-0.5 uppercase tracking-wider font-bold";
+
+  return (
+    <div className="space-y-5 max-w-4xl">
+      <div className="flex items-center gap-2 border-b border-sky-100 pb-2">
+        <Link2 className="w-4 h-4 text-sky-500" />
+        <h3 className="text-sky-600 font-black text-sm">URL 링크로 일괄 추가</h3>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {URL_GUIDE.map(g => (
+          <div key={g.name} className="bg-sky-50 border border-sky-100 rounded-xl p-3 space-y-1">
+            <p className="text-xs font-black text-slate-700">{g.icon} {g.name}</p>
+            <p className="text-[10px] text-slate-500">{g.hint}</p>
+            <p className="text-[9px] text-slate-400 font-mono truncate">{g.example}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* AI 분석 일괄 입력 */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Wand2 className="w-4 h-4 text-amber-600" />
+          <p className="text-xs font-black text-amber-700">⚡ 여러 URL 한번에 붙여넣기 — AI 자동 분석</p>
+        </div>
+        <p className="text-[10px] text-amber-600">URL을 줄바꿈으로 구분해서 붙여넣으면 제목·카테고리·타입·설명을 자동으로 채워줍니다</p>
+        <textarea
+          rows={5}
+          className="w-full p-2.5 bg-white border border-amber-200 rounded-lg text-xs text-slate-800 focus:border-amber-400 focus:outline-none resize-none"
+          placeholder={"https://drive.google.com/file/d/ABC.../view\nhttps://youtu.be/xxxxxxxxxx\nhttps://res.cloudinary.com/.../image.jpg"}
+          value={bulkText}
+          onChange={e => setBulkText(e.target.value)}
+          onPaste={handleBulkPaste}
+        />
+        <button
+          onClick={handleBulkSubmit}
+          disabled={analyzing || !bulkText.trim()}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black text-white disabled:opacity-50"
+          style={{ background: "#f59e0b" }}
+        >
+          {analyzing ? (
+            <><span className="animate-spin">⏳</span> AI 분석 중...</>
+          ) : (
+            <><Wand2 className="w-3.5 h-3.5" /> AI로 자동 분석</>
+          )}
+        </button>
+      </div>
+
+      <div className="flex gap-2 items-center bg-slate-50 border border-sky-100 rounded-xl p-3">
+        <Wand2 className="w-4 h-4 text-sky-500 shrink-0" />
+        <span className="text-xs font-bold text-slate-700 shrink-0">전체 카테고리:</span>
+        <select className={inp + " flex-1"} value={globalCat} onChange={e => setGlobalCat(e.target.value)}>
+          <option value="">선택...</option>
+          {KNOWN_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <button onClick={applyGlobalCat} className="shrink-0 px-3 py-1.5 bg-sky-500 text-white text-xs font-black rounded-lg">적용</button>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex justify-between items-center">
+          <span className="text-xs font-bold text-slate-600">총 {rows.length}개</span>
+          <button onClick={addRow} className="flex items-center gap-1 px-3 py-1.5 bg-sky-50 text-sky-600 text-xs rounded-lg border border-sky-200 font-bold"><Plus className="w-3 h-3" />행 추가</button>
+        </div>
+        {rows.map((row, idx) => (
+          <div key={row.id} className="bg-white border border-sky-100 rounded-xl p-3 space-y-2">
+            <div className="grid gap-2 items-start" style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr 28px" }}>
+              <div>
+                <label className={lbl}>URL</label>
+                <textarea rows={2} className={inp + " resize-none"} placeholder="https://..."
+                  value={row.url} onChange={e => handleUrlChange(row.id, e.target.value)} />
+                {row.url && <span className="text-[9px] mt-0.5 block font-bold text-sky-500">🔗 {detectPlatform(row.url)}</span>}
+              </div>
+              <div><label className={lbl}>제목</label><input className={inp} placeholder="작품 제목" value={row.title} onChange={e => updateRow(row.id, { title: e.target.value })} /></div>
+              <div><label className={lbl}>카테고리</label>
+                <select className={inp} value={row.category} onChange={e => updateRow(row.id, { category: e.target.value })}>
+                  {KNOWN_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  <option value="기타">기타</option>
+                </select>
+              </div>
+              <div><label className={lbl}>타입</label>
+                <select className={inp} value={row.workType} onChange={e => updateRow(row.id, { workType: e.target.value as "image" | "video" })}>
+                  <option value="image">🖼️ 이미지</option>
+                  <option value="video">▶️ 영상</option>
+                </select>
+              </div>
+              <button onClick={() => removeRow(row.id)} className="mt-4 text-slate-300 hover:text-red-400"><X className="w-4 h-4" /></button>
+            </div>
+            {row.workType === "video" && (
+              <div><label className={lbl}>썸네일 이미지 URL (선택)</label>
+                <input className={inp} placeholder="https://..." value={row.thumbUrl} onChange={e => updateRow(row.id, { thumbUrl: e.target.value })} />
+              </div>
+            )}
+            <div><label className={lbl}>설명 (선택)</label>
+              <input className={inp} placeholder="간단한 설명..." value={row.desc} onChange={e => updateRow(row.id, { desc: e.target.value })} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {!done ? (
+        <button onClick={addAll} className="w-full py-3 rounded-xl font-black text-white text-sm hover:opacity-90" style={{ background: "#0ea5e9" }}>
+          ✨ {rows.filter(r => r.url.trim()).length}개 포트폴리오에 추가하기
+        </button>
+      ) : (
+        <div className="text-center space-y-3 py-4">
+          <div className="flex items-center justify-center gap-2 text-emerald-600">
+            <CheckCircle2 className="w-5 h-5" /><p className="font-black text-sm">추가 완료! 저장 버튼을 눌러 반영하세요.</p>
+          </div>
+          <button onClick={() => { setRows([{ id: `r-${Date.now()}`, url: "", thumbUrl: "", title: "", category: KNOWN_CATEGORIES[0], workType: "image", desc: "" }]); setDone(false); }}
+            className="px-4 py-2 bg-sky-50 border border-sky-200 text-sky-600 rounded-xl text-xs font-bold">+ 더 추가하기</button>
+        </div>
+      )}
+    </div>
+  );
+}
 
   const handlePasteMultiple = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const text = e.clipboardData.getData("text");
